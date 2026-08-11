@@ -1,0 +1,7 @@
+# Copy to .envrc (direnv) or source manually.
+export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Docker Desktop on macOS: make the socket discoverable for tools that
+# don't read docker contexts.
+export DOCKER_HOST="unix://$HOME/.docker/run/docker.sock"

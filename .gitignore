@@ -1,0 +1,34 @@
+# Build
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+
+# Env / secrets
+.env
+.envrc
+*.local.yml
+
+# Logs
+logs/
+*.log
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# k6 output
+load/results/*.json
