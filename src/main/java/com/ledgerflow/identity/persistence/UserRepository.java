@@ -18,7 +18,7 @@ public class UserRepository {
 
     public void insert(User user) {
         jdbc.sql("""
-                        INSERT INTO users (id, email, password_hash, full_name, role, status)
+                        INSERT INTO users (id, email, password_hash, display_name, role, status)
                         VALUES (:id, :email, :passwordHash, :fullName, :role, :status)
                         """)
                 .param("id", user.id())
@@ -49,7 +49,7 @@ public class UserRepository {
                 rs.getObject("id", UUID.class),
                 rs.getString("email"),
                 rs.getString("password_hash"),
-                rs.getString("full_name"),
+                rs.getString("display_name"),
                 rs.getString("role"),
                 rs.getString("status"),
                 rs.getObject("created_at", java.time.OffsetDateTime.class));

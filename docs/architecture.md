@@ -16,9 +16,11 @@ bounded contexts, not a fleet of microservices. This is a deliberate choice:
   analytics) are **already asynchronous**: they consume Kafka events and never
   join the financial transaction. Extracting them later is a packaging
   exercise, not a redesign.
-- Boundaries are enforced mechanically with ArchUnit tests *(planned, Phase 3)*:
-  a context may depend on `common` and on other contexts' published API/events
-  only, never on their internals.
+- Boundaries are enforced mechanically by ArchUnit rules
+  ([BoundaryRulesTest](../src/test/java/com/ledgerflow/architecture/BoundaryRulesTest.java)):
+  persistence layers are private to their context, controllers are not an
+  inter-context API, and the async consumers (fraud, notification) cannot
+  depend on the money-path contexts at all.
 
 ```mermaid
 flowchart TB

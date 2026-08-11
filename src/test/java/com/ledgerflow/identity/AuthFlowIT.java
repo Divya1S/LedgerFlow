@@ -104,7 +104,7 @@ class AuthFlowIT {
 
         // Parameterized queries mean the payload is inert data, and the table
         // obviously still exists.
-        String stored = jdbc.sql("SELECT full_name FROM users WHERE lower(email) = lower(:email)")
+        String stored = jdbc.sql("SELECT display_name FROM users WHERE lower(email) = lower(:email)")
                 .param("email", email).query(String.class).single();
         assertThat(stored).isEqualTo(maliciousName);
     }

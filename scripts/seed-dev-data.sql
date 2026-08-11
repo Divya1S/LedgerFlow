@@ -50,7 +50,7 @@ CREATE TEMP TABLE seed_users AS
 SELECT gen_random_uuid() AS id, i
 FROM generate_series(1, 5000) i;
 
-INSERT INTO users (id, email, password_hash, full_name, role, status)
+INSERT INTO users (id, email, password_hash, display_name, role, status)
 SELECT id,
        'seed-user-' || i || '@seed.ledgerflow.io',
        '$2a$10$seedseedseedseedseedsePlaceholderHashNotALoginXXXXXXX',

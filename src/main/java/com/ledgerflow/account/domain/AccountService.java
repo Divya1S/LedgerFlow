@@ -44,6 +44,11 @@ public class AccountService {
         return account;
     }
 
+    /** Lookup without ownership semantics, for other contexts' checks. */
+    public java.util.Optional<Account> find(UUID accountId) {
+        return accounts.findById(accountId);
+    }
+
     public Account requireOwnedAccount(UUID accountId, UUID userId, boolean admin) {
         Account account = accounts.findById(accountId)
                 // 404 (not 403) for other users' accounts: don't leak account existence

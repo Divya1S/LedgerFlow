@@ -8,7 +8,6 @@ import java.util.UUID;
 import com.ledgerflow.account.domain.Account;
 import com.ledgerflow.account.domain.AccountService;
 import com.ledgerflow.account.domain.SystemAccounts;
-import com.ledgerflow.account.persistence.AccountRepository;
 import com.ledgerflow.common.audit.AuditLogger;
 import com.ledgerflow.common.error.ApiException;
 import com.ledgerflow.common.id.Uuid7;
@@ -39,18 +38,16 @@ public class PaymentService {
 
     private final MoneyMovementService movements;
     private final AccountService accountService;
-    private final AccountRepository accounts;
     private final SystemAccounts systemAccounts;
     private final PaymentRepository payments;
     private final OutboxWriter outbox;
     private final AuditLogger audit;
 
     public PaymentService(MoneyMovementService movements, AccountService accountService,
-                          AccountRepository accounts, SystemAccounts systemAccounts,
+                          SystemAccounts systemAccounts,
                           PaymentRepository payments, OutboxWriter outbox, AuditLogger audit) {
         this.movements = movements;
         this.accountService = accountService;
-        this.accounts = accounts;
         this.systemAccounts = systemAccounts;
         this.payments = payments;
         this.outbox = outbox;
@@ -71,7 +68,7 @@ public class PaymentService {
     public PaymentView pay(UUID userId, UUID sourceAccountId, UUID destinationAccountId,
                            long amount, String currency, String description, UUID idemKeyId) {
         accountService.requireOwnedAccount(sourceAccountId, userId, false);
-        Account destination = accounts.findById(destinationAccountId)
+        Account destination = accountService.find(destinationAccountId)
                 .orElseThrow(() -> ApiException.notFound("ACCOUNT_NOT_FOUND", "Destination account not found"));
         if (!"MERCHANT".equals(destination.type())) {
             throw ApiException.unprocessable("NOT_A_MERCHANT",
@@ -115,7 +112,7 @@ public class PaymentService {
         PaymentRow payment = payments.lockById(paymentId)
                 .orElseThrow(() -> ApiException.notFound("PAYMENT_NOT_FOUND", "Payment not found"));
 
-        Account merchant = accounts.findById(payment.destinationAccountId()).orElseThrow();
+        Account merchant = accountService.find(payment.destinationAccountId()).orElseThrow();
         if (!callerIsAdmin && !callerUserId.equals(merchant.userId())) {
             throw ApiException.notFound("PAYMENT_NOT_FOUND", "Payment not found");
         }
@@ -167,7 +164,7 @@ public class PaymentService {
     public PaymentView getPayment(UUID callerUserId, boolean callerIsAdmin, UUID paymentId) {
         PaymentRow payment = payments.findById(paymentId)
                 .orElseThrow(() -> ApiException.notFound("PAYMENT_NOT_FOUND", "Payment not found"));
-        Account merchant = accounts.findById(payment.destinationAccountId()).orElseThrow();
+        Account merchant = accountService.find(payment.destinationAccountId()).orElseThrow();
         boolean isPayer = callerUserId.equals(payment.payerUserId());
         boolean isMerchant = callerUserId.equals(merchant.userId());
         if (!callerIsAdmin && !isPayer && !isMerchant) {
