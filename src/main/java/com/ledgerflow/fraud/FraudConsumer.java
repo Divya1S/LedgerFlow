@@ -44,15 +44,18 @@ public class FraudConsumer {
     private final ProcessedEvents processedEvents;
     private final JdbcClient jdbc;
     private final ObjectMapper objectMapper;
+    private final com.ledgerflow.fraud.ai.FraudAnalystService analyst;
     private final long largeAmount;
     private final long veryLargeAmount;
 
     public FraudConsumer(ProcessedEvents processedEvents, JdbcClient jdbc, ObjectMapper objectMapper,
+                         com.ledgerflow.fraud.ai.FraudAnalystService analyst,
                          @Value("${ledgerflow.fraud.large-amount:100000}") long largeAmount,
                          @Value("${ledgerflow.fraud.very-large-amount:500000}") long veryLargeAmount) {
         this.processedEvents = processedEvents;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
+        this.analyst = analyst;
         this.largeAmount = largeAmount;
         this.veryLargeAmount = veryLargeAmount;
     }
@@ -125,6 +128,17 @@ public class FraudConsumer {
 
         if (!"APPROVED".equals(verdict)) {
             log.warn("fraud verdict {} (score {}) for payment {}: {}", verdict, score, paymentId, ruleHits);
+            // The AI copilot investigates AFTER the verdict commits, off this
+            // thread; its absence or failure changes nothing about the verdict.
+            String ruleHitsJson = objectMapper.writeValueAsString(ruleHits);
+            int finalScore = score;
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            analyst.assessAsync(paymentId, verdict, finalScore, ruleHitsJson);
+                        }
+                    });
         }
     }
 

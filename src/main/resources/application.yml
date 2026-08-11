@@ -67,6 +67,12 @@ server:
   shutdown: graceful
 
 ledgerflow:
+  ai:
+    # Fraud analyst copilot (Gemini). Off by default: the platform is fully
+    # functional without it, and verdicts never depend on it.
+    enabled: ${AI_ENABLED:false}
+    api-key: ${GEMINI_API_KEY:}
+    model: ${AI_MODEL:gemini-2.5-flash}
   ratelimit:
     money-requests-per-minute: ${RATE_LIMIT_MONEY_PER_MINUTE:30}
   fraud:

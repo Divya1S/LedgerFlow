@@ -29,10 +29,13 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final IdempotentEndpoint idempotent;
+    private final com.ledgerflow.fraud.domain.FraudAssessments fraudAssessments;
 
-    public PaymentController(PaymentService paymentService, IdempotentEndpoint idempotent) {
+    public PaymentController(PaymentService paymentService, IdempotentEndpoint idempotent,
+                             com.ledgerflow.fraud.domain.FraudAssessments fraudAssessments) {
         this.paymentService = paymentService;
         this.idempotent = idempotent;
+        this.fraudAssessments = fraudAssessments;
     }
 
     public record PaymentRequest(
@@ -74,5 +77,29 @@ public class PaymentController {
     PaymentService.PaymentView get(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID paymentId) {
         CurrentUser user = CurrentUser.from(jwt);
         return paymentService.getPayment(user.id(), user.isAdmin(), paymentId);
+    }
+
+    /**
+     * Fraud verdict plus the AI analyst's assessment (when one exists).
+     * Merchant-or-admin only: fraud reasoning is not shown to the payer.
+     */
+    @GetMapping("/{paymentId}/fraud-assessment")
+    org.springframework.http.ResponseEntity<String> fraudAssessment(@AuthenticationPrincipal Jwt jwt,
+                                                                    @PathVariable UUID paymentId) {
+        CurrentUser user = CurrentUser.from(jwt);
+        paymentService.requireMerchantOrAdmin(user.id(), user.isAdmin(), paymentId);
+        var assessment = fraudAssessments.forPayment(paymentId)
+                .orElseThrow(() -> com.ledgerflow.common.error.ApiException.notFound(
+                        "ASSESSMENT_NOT_FOUND", "No fraud decision exists for this payment yet"));
+        String body = """
+                {"verdict":"%s","score":%d,"ruleHits":%s,"aiAssessment":%s,"aiModel":%s,"aiAssessedAt":%s}
+                """.formatted(
+                assessment.verdict(), assessment.score(), assessment.ruleHitsJson(),
+                assessment.aiAssessmentJson() == null ? "null" : assessment.aiAssessmentJson(),
+                assessment.aiModel() == null ? "null" : "\"" + assessment.aiModel() + "\"",
+                assessment.aiAssessedAt() == null ? "null" : "\"" + assessment.aiAssessedAt() + "\"");
+        return org.springframework.http.ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .body(body.strip());
     }
 }

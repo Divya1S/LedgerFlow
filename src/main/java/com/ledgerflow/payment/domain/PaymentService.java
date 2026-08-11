@@ -175,6 +175,16 @@ public class PaymentService {
                 payment.sourceAccountId(), payment.destinationAccountId(), payment.createdAt());
     }
 
+    /** Authorization guard for merchant-only payment surfaces (404 if not allowed). */
+    public void requireMerchantOrAdmin(UUID callerUserId, boolean callerIsAdmin, UUID paymentId) {
+        PaymentRow payment = payments.findById(paymentId)
+                .orElseThrow(() -> ApiException.notFound("PAYMENT_NOT_FOUND", "Payment not found"));
+        Account merchant = accountService.find(payment.destinationAccountId()).orElseThrow();
+        if (!callerIsAdmin && !callerUserId.equals(merchant.userId())) {
+            throw ApiException.notFound("PAYMENT_NOT_FOUND", "Payment not found");
+        }
+    }
+
     private long fee(long amount) {
         return amount * FEE_BASIS_POINTS / 10_000;
     }

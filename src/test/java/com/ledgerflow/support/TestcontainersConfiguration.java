@@ -41,4 +41,16 @@ public class TestcontainersConfiguration {
     GenericContainer<?> redisContainer() {
         return REDIS;
     }
+
+    /**
+     * Deterministic LLM for the AI copilot in EVERY test context. Kafka
+     * consumers from all cached Spring contexts share consumer groups, so
+     * the context that happens to consume a flagged payment must have an
+     * LlmClient available; providing the mock here makes the AI pipeline
+     * deterministic across the whole suite.
+     */
+    @Bean
+    com.ledgerflow.fraud.ai.MockLlmClient mockLlmClient() {
+        return new com.ledgerflow.fraud.ai.MockLlmClient();
+    }
 }
