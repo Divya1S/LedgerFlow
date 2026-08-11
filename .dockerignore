@@ -1,0 +1,8 @@
+target/
+.git/
+.idea/
+docs/
+load/results/
+deploy/
+scripts/
+*.md

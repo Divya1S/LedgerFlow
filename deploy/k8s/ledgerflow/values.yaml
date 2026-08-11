@@ -1,0 +1,41 @@
+image:
+  repository: ledgerflow
+  tag: latest
+  # kind loads images side-band (kind load docker-image), so never pull.
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    # No CPU limit on purpose: CPU throttling hurts p99 latency and the JVM
+    # sizes itself from memory. Memory limit = request avoids overcommit
+    # kills mid-transaction.
+    memory: 768Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+env:
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ledgerflow
+  POSTGRES_USER: ledgerflow
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_PROFILES_ACTIVE: json-logs
+
+# Secrets are referenced, never templated with values:
+# kubectl create secret generic ledgerflow-secrets \
+#   --from-literal=POSTGRES_PASSWORD=... --from-literal=JWT_SECRET=...
+secretName: ledgerflow-secrets
+
+service:
+  type: ClusterIP
+  port: 8080
