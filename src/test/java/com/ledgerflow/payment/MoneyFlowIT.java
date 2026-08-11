@@ -136,8 +136,9 @@ class MoneyFlowIT {
         LedgerAssertions.assertBalancesMatchLedger(jdbc, List.of(
                 UUID.fromString(aliceWallet), UUID.fromString(bobWallet), UUID.fromString(bobShop)));
 
-        // Outbox rows were written in the same transactions as the money.
-        Long outboxRows = jdbc.sql("SELECT count(*) FROM outbox_events WHERE status = 'PENDING'")
+        // Outbox rows were written in the same transactions as the money
+        // (the publisher may already have moved them to PUBLISHED).
+        Long outboxRows = jdbc.sql("SELECT count(*) FROM outbox_events")
                 .query(Long.class).single();
         assertThat(outboxRows).isGreaterThanOrEqualTo(6);
     }
