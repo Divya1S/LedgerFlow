@@ -128,8 +128,8 @@ class MoneyFlowIT {
         assertThat(balance(alice.token(), aliceWallet)).isZero();
 
         // History now shows movements, and the books are exact.
-        List history = api.getList(alice.token(), "/api/v1/transactions").getBody();
-        assertThat(history).isNotEmpty();
+        Map historyPage = api.get(alice.token(), "/api/v1/transactions").getBody();
+        assertThat((List<?>) historyPage.get("items")).isNotEmpty();
 
         LedgerAssertions.assertGlobalLedgerBalanced(jdbc);
         LedgerAssertions.assertPerTransactionBalanced(jdbc);
@@ -140,6 +140,36 @@ class MoneyFlowIT {
         Long outboxRows = jdbc.sql("SELECT count(*) FROM outbox_events WHERE status = 'PENDING'")
                 .query(Long.class).single();
         assertThat(outboxRows).isGreaterThanOrEqualTo(6);
+    }
+
+    @Test
+    void statementRunningBalanceIsExactAcrossPages() {
+        ApiTestClient.Session user = api.registerAndLogin();
+        String wallet = openAccount(user, "USER_WALLET", "statement wallet");
+
+        withKey(user, "/api/v1/accounts/" + wallet + "/deposits",
+                Map.of("amountMinorUnits", 1_000, "currency", "USD"));
+        withKey(user, "/api/v1/accounts/" + wallet + "/withdrawals",
+                Map.of("amountMinorUnits", 300, "currency", "USD"));
+        withKey(user, "/api/v1/accounts/" + wallet + "/deposits",
+                Map.of("amountMinorUnits", 50, "currency", "USD"));
+
+        // Newest first: +50 (750), -300 (700), +1000 (1000).
+        ResponseEntity<Map> page1 = api.get(user.token(),
+                "/api/v1/accounts/" + wallet + "/statement?limit=2");
+        List<?> lines1 = (List<?>) page1.getBody().get("items");
+        assertThat(lines1).hasSize(2);
+        assertThat(((Number) ((Map<?, ?>) lines1.get(0)).get("balanceAfterMinorUnits")).longValue()).isEqualTo(750);
+        assertThat(((Number) ((Map<?, ?>) lines1.get(1)).get("balanceAfterMinorUnits")).longValue()).isEqualTo(700);
+        String cursor = (String) page1.getBody().get("nextCursor");
+        assertThat(cursor).isNotNull();
+
+        // The cursor carries the running balance into the next page.
+        ResponseEntity<Map> page2 = api.get(user.token(),
+                "/api/v1/accounts/" + wallet + "/statement?limit=2&cursor=" + cursor);
+        List<?> lines2 = (List<?>) page2.getBody().get("items");
+        assertThat(lines2).hasSize(1);
+        assertThat(((Number) ((Map<?, ?>) lines2.get(0)).get("balanceAfterMinorUnits")).longValue()).isEqualTo(1_000);
     }
 
     @Test

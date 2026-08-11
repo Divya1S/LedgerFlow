@@ -226,6 +226,12 @@ $$;
 -- we prefer failing loudly + monitoring partition coverage.
 -- ----------------------------------------------------------------------------
 
+-- Partition bounds are ALWAYS explicit UTC instants. A bare date literal in
+-- partition DDL is interpreted in the session's TimeZone, so the same
+-- function run from a UTC psql session and from an application session in
+-- another zone would create partitions with misaligned bounds and leave
+-- gaps between them. Absolute '+00' literals make bounds independent of
+-- who creates the partition.
 CREATE FUNCTION create_month_partitions(months_ahead INT DEFAULT 3) RETURNS void
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -235,19 +241,19 @@ DECLARE
     m           INT;
 BEGIN
     FOR m IN 0..months_ahead LOOP
-        month_start := date_trunc('month', now())::date + make_interval(months => m);
+        month_start := date_trunc('month', now() AT TIME ZONE 'UTC')::date + make_interval(months => m);
         month_end   := month_start + INTERVAL '1 month';
         suffix      := to_char(month_start, 'YYYY_MM');
 
         EXECUTE format(
             'CREATE TABLE IF NOT EXISTS transactions_%s PARTITION OF transactions
              FOR VALUES FROM (%L) TO (%L)',
-            suffix, month_start, month_end);
+            suffix, month_start || ' 00:00:00+00', month_end || ' 00:00:00+00');
 
         EXECUTE format(
             'CREATE TABLE IF NOT EXISTS ledger_entries_%s PARTITION OF ledger_entries
              FOR VALUES FROM (%L) TO (%L)',
-            suffix, month_start, month_end);
+            suffix, month_start || ' 00:00:00+00', month_end || ' 00:00:00+00');
 
         -- Attach the deferred zero-sum constraint trigger (idempotent).
         IF NOT EXISTS (

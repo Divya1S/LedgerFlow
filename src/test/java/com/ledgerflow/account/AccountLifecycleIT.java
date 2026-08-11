@@ -93,8 +93,9 @@ class AccountLifecycleIT {
     @Test
     void transactionHistoryStartsEmpty() {
         ApiTestClient.Session session = api.registerAndLogin();
-        ResponseEntity<List> transactions = api.getList(session.token(), "/api/v1/transactions");
+        ResponseEntity<Map> transactions = api.get(session.token(), "/api/v1/transactions");
         assertThat(transactions.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(transactions.getBody()).isEmpty();
+        assertThat((List<?>) transactions.getBody().get("items")).isEmpty();
+        assertThat(transactions.getBody().get("nextCursor")).isNull();
     }
 }
