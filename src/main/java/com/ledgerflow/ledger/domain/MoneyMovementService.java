@@ -33,10 +33,13 @@ public class MoneyMovementService {
 
     private final JdbcClient jdbc;
     private final com.ledgerflow.common.cache.RedisSafeCache cache;
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
-    public MoneyMovementService(JdbcClient jdbc, com.ledgerflow.common.cache.RedisSafeCache cache) {
+    public MoneyMovementService(JdbcClient jdbc, com.ledgerflow.common.cache.RedisSafeCache cache,
+                                io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.jdbc = jdbc;
         this.cache = cache;
+        this.meterRegistry = meterRegistry;
     }
 
     public record MovementResult(UUID transactionId, OffsetDateTime createdAt) {
@@ -81,6 +84,8 @@ public class MoneyMovementService {
             }
             long newBalance = account.balance() + deltaByAccount.get(account.id());
             if (account.minBalance() != null && newBalance < account.minBalance()) {
+                meterRegistry.counter("ledgerflow.movements", "type", type, "result", "insufficient_funds")
+                        .increment();
                 throw ApiException.unprocessable("INSUFFICIENT_FUNDS",
                         "Insufficient funds in account " + account.id());
             }
@@ -156,6 +161,7 @@ public class MoneyMovementService {
                     }
                 });
 
+        meterRegistry.counter("ledgerflow.movements", "type", type, "result", "completed").increment();
         return new MovementResult(transactionId, createdAt);
     }
 

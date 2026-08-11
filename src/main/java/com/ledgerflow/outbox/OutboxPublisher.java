@@ -46,8 +46,13 @@ public class OutboxPublisher {
     private final int maxAttempts;
     private final long sendTimeoutMs;
 
+    private final io.micrometer.core.instrument.Counter publishedCounter;
+    private final io.micrometer.core.instrument.Counter failedCounter;
+    private final java.util.concurrent.atomic.AtomicLong pendingGauge = new java.util.concurrent.atomic.AtomicLong();
+
     public OutboxPublisher(JdbcClient jdbc, TransactionTemplate txTemplate,
                            KafkaTemplate<String, String> kafka,
+                           io.micrometer.core.instrument.MeterRegistry registry,
                            @Value("${ledgerflow.outbox.batch-size:100}") int batchSize,
                            @Value("${ledgerflow.outbox.max-attempts:10}") int maxAttempts,
                            @Value("${ledgerflow.outbox.send-timeout-ms:5000}") long sendTimeoutMs) {
@@ -57,6 +62,9 @@ public class OutboxPublisher {
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
         this.sendTimeoutMs = sendTimeoutMs;
+        this.publishedCounter = registry.counter("ledgerflow.outbox.events", "result", "published");
+        this.failedCounter = registry.counter("ledgerflow.outbox.events", "result", "attempt_failed");
+        registry.gauge("ledgerflow.outbox.pending", pendingGauge);
     }
 
     private record OutboxRow(UUID id, String aggregateType, UUID aggregateId,
@@ -83,13 +91,17 @@ public class OutboxPublisher {
             for (OutboxRow row : batch) {
                 if (publish(row)) {
                     markPublished(row.id());
+                    publishedCounter.increment();
                     ok++;
                 } else {
                     markFailedAttempt(row);
+                    failedCounter.increment();
                 }
             }
             return ok;
         });
+        pendingGauge.set(jdbc.sql("SELECT count(*) FROM outbox_events WHERE status = 'PENDING'")
+                .query(Long.class).single());
         if (published != null && published > 0) {
             log.debug("published {} outbox events", published);
         }

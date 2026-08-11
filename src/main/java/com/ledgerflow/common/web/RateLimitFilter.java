@@ -25,11 +25,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final RedisSafeCache redis;
     private final int moneyRequestsPerMinute;
+    private final io.micrometer.core.instrument.Counter rejections;
 
     public RateLimitFilter(RedisSafeCache redis,
+                           io.micrometer.core.instrument.MeterRegistry registry,
                            @Value("${ledgerflow.ratelimit.money-requests-per-minute:30}") int moneyRequestsPerMinute) {
         this.redis = redis;
         this.moneyRequestsPerMinute = moneyRequestsPerMinute;
+        this.rejections = registry.counter("ledgerflow.ratelimit.rejections");
     }
 
     @Override
@@ -55,6 +58,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             long count = redis.incrementWindow("rl:money:" + auth.getName() + ":" + window,
                     Duration.ofMinutes(1));
             if (count > moneyRequestsPerMinute) {
+                rejections.increment();
                 response.setStatus(429);
                 response.setContentType("application/json");
                 response.setHeader("Retry-After", "60");

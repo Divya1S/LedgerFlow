@@ -1,0 +1,135 @@
+{
+  "uid": "ledgerflow-main",
+  "title": "LedgerFlow",
+  "tags": ["ledgerflow"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by endpoint",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{service=\"ledgerflow\", uri!~\"/actuator.*\"}[1m]))",
+          "legendFormat": "{{uri}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate (5xx)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "fixed", "fixedColor": "red" } }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{service=\"ledgerflow\", status=~\"5..\"}[1m]))",
+          "legendFormat": "5xx"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Latency p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_requests_seconds_bucket{service=\"ledgerflow\", uri!~\"/actuator.*\"}[1m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{service=\"ledgerflow\", uri!~\"/actuator.*\"}[1m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{service=\"ledgerflow\", uri!~\"/actuator.*\"}[1m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Money movements",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (type, result) (rate(ledgerflow_movements_total[1m]))",
+          "legendFormat": "{{type}} {{result}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Database pool (Hikari)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "expr": "hikaricp_connections_active{service=\"ledgerflow\"}", "legendFormat": "active" },
+        { "expr": "hikaricp_connections_pending{service=\"ledgerflow\"}", "legendFormat": "pending" },
+        { "expr": "hikaricp_connections_max{service=\"ledgerflow\"}", "legendFormat": "max" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Outbox pending / publish rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        { "expr": "ledgerflow_outbox_pending{service=\"ledgerflow\"}", "legendFormat": "pending rows" },
+        { "expr": "sum by (result) (rate(ledgerflow_outbox_events_total[1m]))", "legendFormat": "{{result}}/s" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cache hit ratio / rate limiting / retries",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(ledgerflow_cache_gets_total{result=\"hit\"}[5m])) / clamp_min(sum(rate(ledgerflow_cache_gets_total[5m])), 0.001)",
+          "legendFormat": "cache hit ratio"
+        },
+        { "expr": "rate(ledgerflow_ratelimit_rejections_total[1m])", "legendFormat": "429/s" },
+        { "expr": "rate(ledgerflow_db_transient_retries_total[1m])", "legendFormat": "deadlock+serialization retries/s" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Kafka consumer lag (max, per listener)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "max by (client_id) (kafka_consumer_fetch_manager_records_lag_max{service=\"ledgerflow\"})",
+          "legendFormat": "{{client_id}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "JVM heap used",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(jvm_memory_used_bytes{service=\"ledgerflow\", area=\"heap\"})",
+          "legendFormat": "heap used"
+        }
+      ]
+    }
+  ]
+}

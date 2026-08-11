@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: ledgerflow
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # host.docker.internal: the app runs on the host during development;
+      # in Kubernetes this is replaced by pod discovery.
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          service: ledgerflow
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -40,6 +40,20 @@ management:
       probes:
         enabled: true
       show-details: always
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLE_RATE:1.0}
+  otlp:
+    tracing:
+      # Traces are generated and propagated in-process (trace ids appear in
+      # logs); export to an OTLP backend is opt-in via environment.
+      export:
+        enabled: ${OTLP_TRACING_ENABLED:false}
+      endpoint: ${OTLP_ENDPOINT:http://localhost:4318/v1/traces}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -67,3 +81,18 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+---
+# Structured JSON logs for containerized/production runs:
+#   SPRING_PROFILES_ACTIVE=json-logs
+# Uses Spring Boot's built-in ECS-format structured logging; correlation ids
+# (MDC) and trace/span ids are included per log line.
+spring:
+  config:
+    activate:
+      on-profile: json-logs
+
+logging:
+  structured:
+    format:
+      console: ecs

@@ -22,6 +22,15 @@ public class TransientDbRetry {
     private static final Logger log = LoggerFactory.getLogger(TransientDbRetry.class);
     private static final int MAX_ATTEMPTS = 3;
 
+    private final io.micrometer.core.instrument.Counter retryCounter;
+
+    public TransientDbRetry(io.micrometer.core.instrument.MeterRegistry registry) {
+        this.retryCounter = io.micrometer.core.instrument.Counter
+                .builder("ledgerflow.db.transient.retries")
+                .description("Transactions retried after deadlock (40P01) or serialization failure (40001)")
+                .register(registry);
+    }
+
     public <T> T execute(Supplier<T> transactionalOperation) {
         DataAccessException last = null;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -32,6 +41,7 @@ public class TransientDbRetry {
                     throw e;
                 }
                 last = e;
+                retryCounter.increment();
                 long backoffMillis = (1L << attempt) * 25 + ThreadLocalRandom.current().nextLong(25);
                 log.warn("Transient database error (attempt {}/{}), retrying in {}ms: {}",
                         attempt, MAX_ATTEMPTS, backoffMillis, rootSqlState(e));

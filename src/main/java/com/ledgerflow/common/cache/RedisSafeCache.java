@@ -30,20 +30,29 @@ public class RedisSafeCache {
 
     private final StringRedisTemplate redis;
     private final AtomicLong downUntil = new AtomicLong(0);
+    private final io.micrometer.core.instrument.Counter hits;
+    private final io.micrometer.core.instrument.Counter misses;
 
-    public RedisSafeCache(StringRedisTemplate redis) {
+    public RedisSafeCache(StringRedisTemplate redis,
+                          io.micrometer.core.instrument.MeterRegistry registry) {
         this.redis = redis;
+        this.hits = registry.counter("ledgerflow.cache.gets", "result", "hit");
+        this.misses = registry.counter("ledgerflow.cache.gets", "result", "miss");
     }
 
     /** @return cached value, or null on miss OR any Redis problem. */
     public String get(String key) {
         if (isDown()) {
+            misses.increment();
             return null;
         }
         try {
-            return redis.opsForValue().get(key);
+            String value = redis.opsForValue().get(key);
+            (value != null ? hits : misses).increment();
+            return value;
         } catch (RuntimeException e) {
             tripBreaker(e);
+            misses.increment();
             return null;
         }
     }
