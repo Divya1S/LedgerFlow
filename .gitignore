@@ -32,3 +32,7 @@ logs/
 
 # k6 output
 load/results/*.json
+
+# Frontend
+web/node_modules/
+web/dist/

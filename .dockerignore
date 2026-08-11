@@ -5,4 +5,6 @@ docs/
 load/results/
 deploy/
 scripts/
+web/node_modules/
+web/dist/
 *.md

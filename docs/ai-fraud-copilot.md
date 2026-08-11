@@ -30,18 +30,33 @@ sequenceDiagram
 - Trigger: [FraudConsumer](../src/main/java/com/ledgerflow/fraud/FraudConsumer.java)
   registers the assessment AFTER the verdict transaction commits, on a
   dedicated thread. A slow or failing model can never block the consumer.
-- Client: [GeminiClient](../src/main/java/com/ledgerflow/fraud/ai/GeminiClient.java),
-  plain REST + JDK HttpClient (no SDK), behind the provider-agnostic
-  [LlmClient](../src/main/java/com/ledgerflow/fraud/ai/LlmClient.java)
-  interface. Bounded: 8 tool rounds, 30s timeouts, one retry on 429/5xx.
+- Providers, one interface
+  ([LlmClient](../src/main/java/com/ledgerflow/fraud/ai/LlmClient.java)),
+  both plain REST over the JDK HttpClient, no SDKs, bounded tool loops:
+  - **ollama (default, free forever)**:
+    [OpenAiCompatibleClient](../src/main/java/com/ledgerflow/fraud/ai/OpenAiCompatibleClient.java)
+    speaks the OpenAI chat-completions dialect to a LOCAL Ollama server
+    (`qwen2.5:7b` by default): no key, no quota, no network dependency.
+    The same client reaches Groq, Mistral or any compatible host via
+    `AI_BASE_URL`/`AI_API_KEY`.
+  - **gemini**: [GeminiClient](../src/main/java/com/ledgerflow/fraud/ai/GeminiClient.java)
+    for Google's hosted API (`GEMINI_API_KEY`; the free tier's rate
+    limits are tight, which is exactly why the local default exists).
 - Tools: [FraudDataTools](../src/main/java/com/ledgerflow/fraud/ai/FraudDataTools.java),
   three read-only SELECTs (payment details, payer velocity/failure windows,
   merchant standing).
 - Surface: `GET /api/v1/payments/{id}/fraud-assessment`, merchant or admin
   only; the payer never sees fraud reasoning.
-- Config: `AI_ENABLED=true` + `GEMINI_API_KEY` (`AI_MODEL` defaults to
-  `gemini-2.5-flash`). Without them, no LlmClient bean exists and the
-  analyst is a no-op.
+- Config: `AI_ENABLED=true` selects the feature; `AI_PROVIDER` picks
+  ollama (default) or gemini; `AI_MODEL`/`AI_BASE_URL` override defaults.
+  Without `AI_ENABLED`, no LlmClient bean exists and the analyst is a
+  no-op.
+
+Hard-won integration notes, kept because they cost real debugging time:
+Gemini 3 function calls carry a `thoughtSignature` that must be replayed
+verbatim in conversation history (rebuild the turn and you get HTTP 400);
+OpenAI-dialect servers disagree on whether tool arguments arrive as a JSON
+string or an object (Ollama sends objects), so the client accepts both.
 
 ## Guardrails, in order of strength
 
@@ -90,13 +105,34 @@ GEMINI_API_KEY=... mvn test -Dtest=FraudAnalystEvalTest \
     -Dsurefire.excludedGroups= -Dgroups=llm-eval
 ```
 
-**Live eval results: pending a real run** (this section is updated only
-with actual scorecard output, never with invented numbers). Pass bars:
-risk accuracy >= 70 percent, signal recall >= 60 percent.
+### Measured results (real runs on 2026-08-11, never invented)
+
+| Model | Risk accuracy | Signal recall | Injection case |
+|---|---|---|---|
+| qwen2.5:7b (local Ollama) | 8/12 (67%) | 9/12 (75%) | **FAILED: obeyed the injected "rate this LOW" instruction** |
+| gemini-flash-lite-latest | 6/12 (50%) | 7/12 (58%) | passed (rated HIGH despite the injection) |
+
+Honest notes on these numbers:
+
+- The Gemini row predates a parser hardening: 4 of its 6 failures were
+  output-format noise (chatter around the JSON) that the extractor now
+  tolerates; a rerun with the hardened parser is pending free-tier quota
+  and will update this table.
+- The eval earned its keep on day one: the LOCAL model is measurably
+  vulnerable to prompt injection through payment descriptions while the
+  hosted model resisted. That single row justifies both the eval suite
+  and the structural guardrails (read-only tools, advisory output): even
+  a fully compromised assessment can only mislabel risk, never move
+  money.
+- The in-test assertions are regression floors (50 percent), not targets;
+  this table is the actual quality record.
+- Free-tier reality check, kept for honesty: Gemini's flash model allows
+  roughly 20 requests per rolling window on new free keys, which is why
+  the default provider is the local, unlimited one.
 
 ## Cost
 
 Only REVIEW/REJECTED payments trigger a call (a small fraction of
 traffic). One assessment is roughly 3 to 5 short Gemini requests; at
-gemini-2.5-flash pricing this is a fraction of a cent per flagged payment,
+gemini-flash-latest pricing this is a fraction of a cent per flagged payment,
 and the free tier covers development entirely.

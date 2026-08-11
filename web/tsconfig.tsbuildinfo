@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/views/accountsview.tsx","./src/views/authview.tsx","./src/views/historyview.tsx","./src/views/movemoneyview.tsx","./src/views/paymentsview.tsx"],"version":"5.9.3"}

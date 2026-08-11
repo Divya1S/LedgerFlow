@@ -68,11 +68,16 @@ server:
 
 ledgerflow:
   ai:
-    # Fraud analyst copilot (Gemini). Off by default: the platform is fully
+    # Fraud analyst copilot. Off by default: the platform is fully
     # functional without it, and verdicts never depend on it.
+    # provider "ollama" (default) talks to any OpenAI-compatible endpoint,
+    # out of the box a LOCAL Ollama server (free, no key, no quota).
+    # provider "gemini" uses Google's hosted API and needs GEMINI_API_KEY.
     enabled: ${AI_ENABLED:false}
+    provider: ${AI_PROVIDER:ollama}
     api-key: ${GEMINI_API_KEY:}
-    model: ${AI_MODEL:gemini-2.5-flash}
+    model: ${AI_MODEL:}
+    base-url: ${AI_BASE_URL:}
   ratelimit:
     money-requests-per-minute: ${RATE_LIMIT_MONEY_PER_MINUTE:30}
   fraud:

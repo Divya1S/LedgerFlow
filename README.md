@@ -1,8 +1,43 @@
 # LedgerFlow
 
+[![CI](https://github.com/Divya1S/LedgerFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/Divya1S/LedgerFlow/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Divya1S/LedgerFlow/actions/workflows/codeql.yml/badge.svg)](https://github.com/Divya1S/LedgerFlow/actions/workflows/codeql.yml)
+![Coverage](.github/badges/jacoco.svg)
+![Java 21](https://img.shields.io/badge/Java-21-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 A distributed payment and double-entry ledger platform where PostgreSQL is
 the transactional source of truth, built to survive concurrency, dependency
 outages and a skeptical code review.
+
+![Payment with fraud verdict and AI analyst assessment](docs/media/payment-fraud-ai.png)
+
+## The 90 second tour
+
+- **Money is exact, provably.** Every transfer writes balanced ledger
+  entries; a database trigger rejects any commit that does not sum to
+  zero. 1,000 concurrent transfers against one account: exactly the
+  affordable half succeed, the books stay exact.
+- **Chaos tested.** Kafka stopped and Redis paused under load: 102,110
+  requests, 0 failures, max latency 533ms, outbox drained after recovery.
+- **Measured, never invented.** Statement query 403ms to 0.48ms, OFFSET
+  vs keyset at depth 500k: 421ms vs 0.86ms, all with EXPLAIN ANALYZE
+  plans in the docs.
+- **AI where it earns its place.** An LLM fraud analyst investigates
+  flagged payments through read-only tools: local Ollama by default
+  (free, no key) or Gemini, scored by a golden-case eval suite that
+  caught a real prompt-injection weakness. It can flag money; it cannot
+  touch it.
+- **Full stack.** React dashboard, REST API with idempotency keys,
+  Prometheus + Grafana, Helm deployment on Kubernetes.
+
+Prove the books yourself in one command (stack + app running):
+
+```bash
+./scripts/audit-demo.sh
+```
+
+![Audit demo](docs/media/audit-demo.gif)
 
 ## Architecture
 
@@ -53,16 +88,42 @@ entries + balance updates + audit row + outbox row, commit.
 - **Performance**: measured, never invented. EXPLAIN ANALYZE before/after
   for every index, OFFSET vs keyset at depth 500k, partition pruning.
 
+## AI fraud analyst
+
+When the deterministic rule engine flags a payment, an LLM analyst
+investigates it through three read-only tools (payment details, payer
+velocity windows, merchant standing) and stores a structured risk
+assessment for the human reviewer. Two providers behind one interface:
+a local Ollama model by default (free, no key, no quota) or Gemini.
+Guardrails are structural: the model can only reach SELECT-backed tools,
+its output is advisory, and user text is passed as untrusted data. A
+golden-case eval suite measures risk-level accuracy and signal recall
+against the live models, and it earned its keep: it caught the local 7B
+model obeying a prompt injection that the hosted model resisted. Design,
+guardrails and measured scorecards:
+[docs/ai-fraud-copilot.md](docs/ai-fraud-copilot.md).
+
+## Dashboard
+
+React + TypeScript (Vite), served from the Spring Boot jar. Register, open
+wallets and merchant accounts, move money with visible idempotency replay,
+statements with running balances on keyset cursors, payments with live
+fraud verdicts and AI assessments.
+
+![Statement with running balance](docs/media/accounts-statement.png)
+
 ## Technology
 
 | Layer | Choice |
 |---|---|
 | Backend | Java 21, Spring Boot 3.5, hand-written SQL via JdbcClient |
+| Frontend | React 18, TypeScript, Vite (served from the boot jar) |
 | Database | PostgreSQL 17, Flyway migrations, monthly partitioning |
 | Messaging | Kafka (KRaft), transactional outbox, DLT |
 | Cache | Redis (cache-aside + rate limiting, fail-open) |
+| AI | Gemini function calling over read-only tools, eval-scored |
 | Observability | Micrometer, Prometheus, Grafana, OTel tracing, ECS JSON logs |
-| Tests | JUnit 5, Testcontainers (Postgres, Kafka, Redis), k6 |
+| Tests | JUnit 5, Testcontainers (Postgres, Kafka, Redis), k6, Playwright-verified UI |
 | Deploy | Docker, Helm on kind (real), Terraform for AWS (reference) |
 
 ## Database engineering
@@ -104,6 +165,8 @@ Prometheus + Grafana provisioned from the repo (`docker compose up`),
 domain metrics (movements, outbox lag, cache ratio, deadlock retries),
 traces with ids in every log line: [docs/observability.md](docs/observability.md).
 
+![Grafana during a load test](docs/media/grafana-under-load.png)
+
 ## API
 
 OpenAPI at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`. Money
@@ -118,7 +181,11 @@ export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
 docker compose up -d          # Postgres :55432, Kafka :9092, Redis :6379,
                               # Prometheus :9090, Grafana :3000
 mvn verify                    # unit + integration tests (Testcontainers)
-mvn spring-boot:run           # Flyway migrates on boot; app on :8080
+mvn -Pwith-ui package         # build with the React dashboard in the jar
+java -jar target/ledgerflow-0.1.0-SNAPSHOT.jar   # app + dashboard on :8080
+
+# optional AI fraud analyst (free Gemini key from aistudio.google.com):
+# AI_ENABLED=true GEMINI_API_KEY=... java -jar target/ledgerflow-*.jar
 
 # optional: 5M transaction dataset for query work
 docker exec -i ledgerflow-postgres psql -U ledgerflow -d ledgerflow \

@@ -56,36 +56,46 @@ public class GeminiClient implements LlmClient {
 
         for (int round = 0; round <= MAX_TOOL_ROUNDS; round++) {
             JsonNode response = call(systemPrompt, contents, tools);
-            JsonNode parts = response.path("candidates").path(0).path("content").path("parts");
+            JsonNode content = response.path("candidates").path(0).path("content");
+            JsonNode parts = content.path("parts");
             if (parts.isMissingNode() || parts.isEmpty()) {
                 throw new LlmException("Gemini returned no content parts: " + summarize(response));
             }
 
-            JsonNode functionCall = null;
+            java.util.List<JsonNode> functionCalls = new java.util.ArrayList<>();
             StringBuilder text = new StringBuilder();
             for (JsonNode part : parts) {
                 if (part.has("functionCall")) {
-                    functionCall = part.get("functionCall");
+                    functionCalls.add(part.get("functionCall"));
                 } else if (part.has("text")) {
                     text.append(part.get("text").asText());
                 }
             }
 
-            if (functionCall == null) {
+            if (functionCalls.isEmpty()) {
                 return text.toString();
             }
 
-            String toolName = functionCall.path("name").asText();
-            JsonNode args = functionCall.path("args");
-            String toolResult = executor.execute(toolName, args);
-            log.debug("gemini tool round {}: {}({})", round, toolName, args);
+            // Replay the model's turn VERBATIM: Gemini 3 function calls carry
+            // a thoughtSignature that must be echoed back unchanged, so the
+            // content node goes into history as received, never rebuilt.
+            contents.add(content.deepCopy());
 
-            // Replay the model's functionCall turn, then answer it.
-            contents.add(turn("model", part("functionCall", functionCall)));
-            ObjectNode functionResponse = json.createObjectNode();
-            functionResponse.put("name", toolName);
-            functionResponse.set("response", parseOrWrap(toolResult));
-            contents.add(turn("user", part("functionResponse", functionResponse)));
+            ArrayNode responseParts = json.createArrayNode();
+            for (JsonNode functionCall : functionCalls) {
+                String toolName = functionCall.path("name").asText();
+                JsonNode args = functionCall.path("args");
+                String toolResult = executor.execute(toolName, args);
+                log.debug("gemini tool round {}: {}({})", round, toolName, args);
+                ObjectNode functionResponse = json.createObjectNode();
+                functionResponse.put("name", toolName);
+                functionResponse.set("response", parseOrWrap(toolResult));
+                responseParts.add(part("functionResponse", functionResponse));
+            }
+            ObjectNode responseTurn = json.createObjectNode();
+            responseTurn.put("role", "user");
+            responseTurn.set("parts", responseParts);
+            contents.add(responseTurn);
         }
         throw new LlmException("Gemini exceeded " + MAX_TOOL_ROUNDS + " tool rounds");
     }
@@ -111,7 +121,7 @@ public class GeminiClient implements LlmClient {
         body.set("generationConfig", json.createObjectNode().put("temperature", 0.2));
 
         String url = "%s/models/%s:generateContent".formatted(baseUrl, model);
-        for (int attempt = 1; attempt <= 2; attempt++) {
+        for (int attempt = 1; attempt <= 3; attempt++) {
             try {
                 HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                         .header("Content-Type", "application/json")
@@ -123,9 +133,14 @@ public class GeminiClient implements LlmClient {
                 if (response.statusCode() == 200) {
                     return json.readTree(response.body());
                 }
-                boolean retryable = response.statusCode() == 429 || response.statusCode() >= 500;
-                if (retryable && attempt == 1) {
-                    Thread.sleep(2000);
+                // 429: free-tier RPM budgets are tiny, wait them out.
+                // 403 included: newly created keys intermittently return
+                // PERMISSION_DENIED while API enablement propagates.
+                boolean retryable = response.statusCode() == 429 || response.statusCode() == 403
+                        || response.statusCode() >= 500;
+                if (retryable && attempt < 3) {
+                    log.debug("gemini retryable HTTP {} (attempt {})", response.statusCode(), attempt);
+                    Thread.sleep(attempt == 1 ? 5_000 : 20_000);
                     continue;
                 }
                 throw new LlmException("Gemini HTTP " + response.statusCode() + ": "
@@ -139,7 +154,7 @@ public class GeminiClient implements LlmClient {
                 throw new LlmException("Gemini call failed", e);
             }
         }
-        throw new LlmException("unreachable");
+        throw new LlmException("Gemini retries exhausted");
     }
 
     private ObjectNode turn(String role, ObjectNode part) {

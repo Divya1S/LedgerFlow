@@ -72,11 +72,22 @@ public final class FraudAnalystPrompt {
                                 List.of("payment_id"))));
     }
 
-    /** Parses and validates the model's final JSON; throws on contract violations. */
+    /**
+     * Parses and validates the model's final JSON; throws on contract
+     * violations. Small models decorate their JSON with fences, prefixes or
+     * trailing chatter, so the outermost brace-delimited object is extracted
+     * before parsing; the schema validation below still rejects anything
+     * that is not a real assessment.
+     */
     public static JsonNode parseAssessment(String modelOutput) {
         String cleaned = modelOutput.strip();
         if (cleaned.startsWith("```")) {
             cleaned = cleaned.replaceAll("^```(json)?\\s*", "").replaceAll("\\s*```$", "");
+        }
+        int first = cleaned.indexOf('{');
+        int last = cleaned.lastIndexOf('}');
+        if (first >= 0 && last > first) {
+            cleaned = cleaned.substring(first, last + 1);
         }
         try {
             JsonNode node = JSON.readTree(cleaned);

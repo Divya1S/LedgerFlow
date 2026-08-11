@@ -57,6 +57,24 @@ jobs:
             target/surefire-reports
             target/failsafe-reports
 
+  frontend:
+    name: Dashboard build + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build (tsc + vite)
+        working-directory: web
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
   docker-image:
     name: Docker image build
     runs-on: ubuntu-latest
@@ -68,7 +86,7 @@ jobs:
         run: docker build -t ledgerflow:${{ github.sha }} .
 
       - name: Scan image for critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ledgerflow:${{ github.sha }}
           format: table
