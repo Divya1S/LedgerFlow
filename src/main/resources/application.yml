@@ -12,6 +12,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  data:
+    redis:
+      # Fail fast so the fail-open breaker takes over in ~0.5s instead of
+      # Lettuce's 60s default. Measured in chaos testing: without this, the
+      # first requests after a Redis outage hung for tens of seconds.
+      timeout: 500ms
+      connect-timeout: 500ms
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -66,8 +73,11 @@ ledgerflow:
     large-amount: 100000      # $1,000.00 in minor units
     very-large-amount: 500000 # $5,000.00
   outbox:
-    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:500}
-    batch-size: 100
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:200}
+    # Sized from chaos-test measurement: 100/500ms (200 events/s) fell
+    # behind a ~1100 movements/s burst by 65k rows. 1000/200ms sustains
+    # ~5000 events/s per publisher instance.
+    batch-size: ${OUTBOX_BATCH_SIZE:1000}
     max-attempts: 10
     send-timeout-ms: 5000
   security:

@@ -1,0 +1,165 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "transfer completed or clean reject": {
+                    "fails": 0,
+                    "name": "transfer completed or clean reject",
+                    "path": "::transfer completed or clean reject",
+                    "id": "2840272e14db93551d03bf93fc43f1c1",
+                    "passes": 49894
+                },
+                "history 200": {
+                    "id": "fe27b3b8edd292c7f2170a6357b087d0",
+                    "passes": 52192,
+                    "fails": 0,
+                    "name": "history 200",
+                    "path": "::history 200"
+                }
+            }
+    },
+    "metrics": {
+        "http_req_tls_handshaking": {
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "avg": 0
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 533.159,
+            "p(90)": 16.458,
+            "p(95)": 21.657549999999997,
+            "avg": 9.332038840466126,
+            "min": 0.38,
+            "med": 9.2095
+        },
+        "data_received": {
+            "count": 886607724,
+            "rate": 7319671.232887569
+        },
+        "vus": {
+            "value": 8,
+            "min": 0,
+            "max": 8
+        },
+        "http_req_duration": {
+            "max": 533.159,
+            "p(90)": 16.458,
+            "p(95)": 21.657549999999997,
+            "avg": 9.332038840466126,
+            "min": 0.38,
+            "med": 9.2095
+        },
+        "data_sent": {
+            "count": 59167342,
+            "rate": 488474.75545320247
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 102110,
+            "value": 0
+        },
+        "http_req_waiting": {
+            "avg": 9.286686132602064,
+            "min": 0.364,
+            "med": 9.1735,
+            "max": 533.051,
+            "p(90)": 16.408100000000005,
+            "p(95)": 21.584549999999997
+        },
+        "iterations": {
+            "count": 102086,
+            "rate": 842.8033472451007
+        },
+        "http_req_blocked": {
+            "med": 0.001,
+            "max": 3.405,
+            "p(90)": 0.003,
+            "p(95)": 0.004,
+            "avg": 0.0034263539320335277,
+            "min": 0
+        },
+        "vus_max": {
+            "value": 8,
+            "min": 8,
+            "max": 8
+        },
+        "http_req_sending": {
+            "med": 0.006,
+            "max": 0.866,
+            "p(90)": 0.014,
+            "p(95)": 0.018,
+            "avg": 0.008047194202327105,
+            "min": 0.001
+        },
+        "http_reqs": {
+            "count": 102110,
+            "rate": 843.001486856153
+        },
+        "checks": {
+            "passes": 102086,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.95": false
+            },
+            "value": 1
+        },
+        "iteration_duration": {
+            "avg": 9.397716200282208,
+            "min": 0.400209,
+            "med": 9.275021,
+            "max": 533.327583,
+            "p(90)": 16.5465415,
+            "p(95)": 21.732614249999997
+        },
+        "http_req_connecting": {
+            "avg": 0.0012468808148075603,
+            "min": 0,
+            "med": 0,
+            "max": 1.557,
+            "p(90)": 0,
+            "p(95)": 0
+        },
+        "http_req_receiving": {
+            "avg": 0.03730551366173278,
+            "min": 0.007,
+            "med": 0.029,
+            "max": 14.141,
+            "p(90)": 0.07,
+            "p(95)": 0.086
+        }
+    },
+    "setup_data": {
+        "users": [
+            {
+                "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsZWRnZXJmbG93Iiwic3ViIjoiMDE5ZmYyMmItNDczZS03MDc3LTgzMzEtMDJmNzIzYzQ1YWEyIiwicm9sZSI6IlVTRVIiLCJleHAiOjE3ODY0Nzc5NTAsImlhdCI6MTc4NjQ3NDM1MCwiZW1haWwiOiJjaGFvcy0xNzg2NDc0MzUwMzQ4LTBAY2hhb3MubGVkZ2VyZmxvdy5pbyJ9.N3zj719v2KhDUTXXSYuHB1DJicnxJW4mZV-y3Hx74bE",
+                "wallet": "019ff22b-481e-7fde-8a39-5a1e23cdf015"
+            },
+            {
+                "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsZWRnZXJmbG93Iiwic3ViIjoiMDE5ZmYyMmItNDg1ZS03YzkxLTkwYTctMmEzZDRjN2FjYjVmIiwicm9sZSI6IlVTRVIiLCJleHAiOjE3ODY0Nzc5NTAsImlhdCI6MTc4NjQ3NDM1MCwiZW1haWwiOiJjaGFvcy0xNzg2NDc0MzUwNjgzLTFAY2hhb3MubGVkZ2VyZmxvdy5pbyJ9.nvK1-0W4Kmd4nG9Dc1jNmhkFOceP75BQ0tprnHiw2k0",
+                "wallet": "019ff22b-48ea-7657-946a-eb5dad60b9d7"
+            },
+            {
+                "wallet": "019ff22b-4981-74aa-b88b-4d0a469de906",
+                "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsZWRnZXJmbG93Iiwic3ViIjoiMDE5ZmYyMmItNDhmOC03Nzg5LThlN2YtNTlkYWU3YmM5NTY0Iiwicm9sZSI6IlVTRVIiLCJleHAiOjE3ODY0Nzc5NTAsImlhdCI6MTc4NjQ3NDM1MCwiZW1haWwiOiJjaGFvcy0xNzg2NDc0MzUwODM5LTJAY2hhb3MubGVkZ2VyZmxvdy5pbyJ9.byFZf5FURhdxTeZUw2Z0ZV1VdfG8-zZ-7MMDaXHqoGY"
+            },
+            {
+                "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsZWRnZXJmbG93Iiwic3ViIjoiMDE5ZmYyMmItNDk4Yy03OGFhLWE0NTItZDQ2NjUzYmJiOWI5Iiwicm9sZSI6IlVTRVIiLCJleHAiOjE3ODY0Nzc5NTEsImlhdCI6MTc4NjQ3NDM1MSwiZW1haWwiOiJjaGFvcy0xNzg2NDc0MzUwOTg2LTNAY2hhb3MubGVkZ2VyZmxvdy5pbyJ9.PTfeucCjllYvPYDkWYWjECSI0SCZ4jvnZfGOrPbesPo",
+                "wallet": "019ff22b-4a1a-78dc-8ce3-05ab64280ca9"
+            },
+            {
+                "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsZWRnZXJmbG93Iiwic3ViIjoiMDE5ZmYyMmItNGEyZC03ZDRhLWIzZTYtYjE5YzY4ZDU2ODI5Iiwicm9sZSI6IlVTRVIiLCJleHAiOjE3ODY0Nzc5NTEsImlhdCI6MTc4NjQ3NDM1MSwiZW1haWwiOiJjaGFvcy0xNzg2NDc0MzUxMTQ4LTRAY2hhb3MubGVkZ2VyZmxvdy5pbyJ9.PtB5FaraoSUBYzUwdejvWRnCYw8Tkrf7gsEn2VgAz7E",
+                "wallet": "019ff22b-4acf-7101-b469-c3bc2508a9a7"
+            },
+            {
+                "token": "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJsZWRnZXJmbG93Iiwic3ViIjoiMDE5ZmYyMmItNGFkYS03ZjQ0LWExZTAtYjgyM2VkODI0ZGY1Iiwicm9sZSI6IlVTRVIiLCJleHAiOjE3ODY0Nzc5NTEsImlhdCI6MTc4NjQ3NDM1MSwiZW1haWwiOiJjaGFvcy0xNzg2NDc0MzUxMzIxLTVAY2hhb3MubGVkZ2VyZmxvdy5pbyJ9.owz5BEiSRU5U9mB9gRQq8bdIQM0M6ejgduVFeSDKlhQ",
+                "wallet": "019ff22b-4b63-7c52-b6bc-b3a9b5fe689a"
+            }
+        ]
+    }
+}

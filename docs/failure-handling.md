@@ -36,6 +36,17 @@ Why the rate limiter fails open and not closed: correctness never depended
 on it, and failing closed would turn a Redis outage into a full write
 outage, which is a worse failure than briefly losing throttling.
 
+A lesson chaos testing taught the hard way: fail-open logic is only as
+fast as the client timeout in front of it. The first chaos run showed
+requests hanging for up to 25 seconds during the Redis pause, because
+Lettuce's default command timeout is 60s and the breaker only trips after
+the first exception. The fix is a 500ms Redis command/connect timeout
+(application.yml), so the breaker takes over within half a second. The
+same run also showed the outbox publisher (100 rows per 500ms poll)
+falling 65k events behind a ~1100 movements/s burst; the batch size and
+poll interval are now sized for ~5000 events/s per instance, measured, not
+guessed.
+
 ## Application instance
 
 Stateless by design: sessions are JWTs, idempotency state is in
