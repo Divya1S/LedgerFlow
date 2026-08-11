@@ -46,6 +46,11 @@ server:
   shutdown: graceful
 
 ledgerflow:
+  ratelimit:
+    money-requests-per-minute: ${RATE_LIMIT_MONEY_PER_MINUTE:30}
+  fraud:
+    large-amount: 100000      # $1,000.00 in minor units
+    very-large-amount: 500000 # $5,000.00
   outbox:
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:500}
     batch-size: 100

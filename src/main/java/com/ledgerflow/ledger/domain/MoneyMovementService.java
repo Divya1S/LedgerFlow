@@ -32,9 +32,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class MoneyMovementService {
 
     private final JdbcClient jdbc;
+    private final com.ledgerflow.common.cache.RedisSafeCache cache;
 
-    public MoneyMovementService(JdbcClient jdbc) {
+    public MoneyMovementService(JdbcClient jdbc, com.ledgerflow.common.cache.RedisSafeCache cache) {
         this.jdbc = jdbc;
+        this.cache = cache;
     }
 
     public record MovementResult(UUID transactionId, OffsetDateTime createdAt) {
@@ -139,6 +141,20 @@ public class MoneyMovementService {
                 .param("transactionId", transactionId)
                 .param("createdAt", createdAt)
                 .update();
+
+        // Evict cached first-history-pages AFTER the commit, not before:
+        // evicting inside the transaction would let a concurrent reader
+        // refill the cache with pre-commit data.
+        String[] cacheKeys = deltaByAccount.keySet().stream()
+                .map(com.ledgerflow.common.cache.CacheKeys::accountHistory)
+                .toArray(String[]::new);
+        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        cache.evict(cacheKeys);
+                    }
+                });
 
         return new MovementResult(transactionId, createdAt);
     }

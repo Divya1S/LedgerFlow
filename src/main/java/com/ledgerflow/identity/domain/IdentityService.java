@@ -54,6 +54,8 @@ public class IdentityService {
         if (!"ACTIVE".equals(user.status())) {
             throw ApiException.forbidden("USER_INACTIVE", "This user account is not active");
         }
+        audit.record(user.id(), "USER_LOGIN", "user", user.id().toString(),
+                null, null, "identity", null);
         return new AuthResult(user, jwtService.issueToken(user));
     }
 

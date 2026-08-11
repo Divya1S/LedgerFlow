@@ -33,10 +33,16 @@ public class TransactionQueryController {
 
     private final TransactionQueryRepository transactions;
     private final AccountService accountService;
+    private final com.ledgerflow.common.cache.RedisSafeCache cache;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
-    public TransactionQueryController(TransactionQueryRepository transactions, AccountService accountService) {
+    public TransactionQueryController(TransactionQueryRepository transactions, AccountService accountService,
+                                      com.ledgerflow.common.cache.RedisSafeCache cache,
+                                      com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
         this.transactions = transactions;
         this.accountService = accountService;
+        this.cache = cache;
+        this.objectMapper = objectMapper;
     }
 
     public record TransactionResponse(
@@ -79,17 +85,48 @@ public class TransactionQueryController {
         return TransactionResponse.from(t);
     }
 
+    /**
+     * The first page (no cursor, default limit) is cache-aside in Redis
+     * with a 30s TTL; money movements evict the touched accounts' keys
+     * after commit. Cursored pages are immutable-ish history and cheap by
+     * index, so they bypass the cache. X-Cache exposes HIT/MISS/BYPASS.
+     */
     @GetMapping("/accounts/{accountId}/transactions")
-    PageResponse<TransactionResponse> byAccount(@AuthenticationPrincipal Jwt jwt,
+    org.springframework.http.ResponseEntity<String> byAccount(@AuthenticationPrincipal Jwt jwt,
                                                 @PathVariable UUID accountId,
                                                 @RequestParam(required = false) String cursor,
-                                                @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit) {
+                                                @RequestParam(defaultValue = "50") @Min(1) @Max(200) int limit)
+            throws com.fasterxml.jackson.core.JsonProcessingException {
         CurrentUser user = CurrentUser.from(jwt);
         accountService.requireOwnedAccount(accountId, user.id(), user.isAdmin());
+
+        boolean cacheable = cursor == null && limit == 50;
+        if (cacheable) {
+            String hit = cache.get(historyCacheKey(accountId));
+            if (hit != null) {
+                return jsonResponse(hit, "HIT");
+            }
+        }
         Cursor c = cursor == null ? null : Cursor.decode(cursor);
         List<TransactionView> page = transactions.findForAccount(accountId,
                 c == null ? null : c.createdAt(), c == null ? null : c.id(), limit);
-        return toPage(page, limit);
+        String body = objectMapper.writeValueAsString(toPage(page, limit));
+        if (cacheable) {
+            cache.put(historyCacheKey(accountId), body, java.time.Duration.ofSeconds(30));
+            return jsonResponse(body, "MISS");
+        }
+        return jsonResponse(body, "BYPASS");
+    }
+
+    private static String historyCacheKey(UUID accountId) {
+        return com.ledgerflow.common.cache.CacheKeys.accountHistory(accountId);
+    }
+
+    private org.springframework.http.ResponseEntity<String> jsonResponse(String body, String cacheStatus) {
+        return org.springframework.http.ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .header("X-Cache", cacheStatus)
+                .body(body);
     }
 
     /**
