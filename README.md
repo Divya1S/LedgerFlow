@@ -1,7 +1,7 @@
 # LedgerFlow
 
 A distributed financial transaction and payment platform whose PostgreSQL
-database is the transactional source of truth — double-entry ledger, ACID
+database is the transactional source of truth: double-entry ledger, ACID
 money movement, idempotent APIs, transactional outbox, and measured (never
 fabricated) performance work.
 

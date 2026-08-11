@@ -114,7 +114,7 @@ entries:
 | Transfer $25 A→B | wallet A −25 | wallet B +25 |
 | Payment $30 + $1 fee | wallet −31 | merchant +30, `SYSTEM_FEES` +1 |
 
-`SYSTEM_CASH` legitimately goes negative — it mirrors money the platform holds
+`SYSTEM_CASH` legitimately goes negative. It mirrors money the platform holds
 externally. That's why `account_balances.min_balance` is `NULL` (no floor) for
 system accounts and `0` for user wallets.
 
@@ -138,10 +138,10 @@ Phase 3 logic (a future FX feature would introduce explicit conversion
 transactions).
 
 **`account_balances` is separate from `accounts`.** The balance row is the
-single most contended row in the system — every movement takes `SELECT … FOR
+single most contended row in the system, since every movement takes `SELECT ... FOR
 UPDATE` on it. Keeping it narrow (no index on `balance`, cold metadata
 elsewhere) keeps lock scope tight and updates HOT (no index-entry churn).
-The balance is deliberately *derivable* — `SUM(ledger_entries.amount) per
+The balance is deliberately *derivable*: `SUM(ledger_entries.amount) per
 account` must always equal it, which reconciliation queries assert.
 
 **TEXT + CHECK instead of Postgres ENUM types.** Adding an enum value is
@@ -167,7 +167,7 @@ is `DETACH PARTITION`, not `DELETE`. Consequences we accept and document:
 - constraint triggers cannot live on the partitioned parent, so
   `create_month_partitions()` attaches the zero-sum trigger to each new
   partition. Partitions are pre-created months ahead; there is deliberately
-  **no DEFAULT partition** — a default absorbs mis-ranged rows silently and
+  **no DEFAULT partition**. A default absorbs mis-ranged rows silently and
   blocks clean partition management. Missing-partition inserts fail loudly
   and partition coverage is monitored.
 

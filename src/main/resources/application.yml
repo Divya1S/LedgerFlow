@@ -27,3 +27,16 @@ management:
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
+
+ledgerflow:
+  security:
+    # Dev-only default. Overridden by env in every non-local environment;
+    # Kubernetes provides it from a Secret (see deploy/).
+    jwt-secret: ${JWT_SECRET:local-dev-only-secret-change-me-0123456789abcdef}
+    jwt-ttl-minutes: ${JWT_TTL_MINUTES:60}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

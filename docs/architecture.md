@@ -10,7 +10,7 @@ bounded contexts, not a fleet of microservices. This is a deliberate choice:
 
 - The core financial operation (transfer/payment) is **one ACID transaction**
   touching balances, ledger, audit and outbox. Splitting those across services
-  would trade a database transaction for a distributed saga — enormous
+  would trade a database transaction for a distributed saga: enormous
   complexity for zero benefit at this scale.
 - The contexts that *do* benefit from independence (fraud, notifications,
   analytics) are **already asynchronous**: they consume Kafka events and never
@@ -54,7 +54,7 @@ flowchart TB
 | `fraud` | async rule evaluation of payment events | Kafka → PostgreSQL |
 | `notification` | async user notifications | Kafka → PostgreSQL |
 | `analytics` | async aggregates / reporting views | Kafka → PostgreSQL |
-| `common` | error model, correlation IDs, UUIDv7, audit | — |
+| `common` | error model, correlation IDs, UUIDv7, audit | (none) |
 
 ## Source-of-truth rules (non-negotiable)
 
@@ -65,7 +65,7 @@ flowchart TB
 3. Redis holds *rebuildable projections* (caches, rate-limit counters). Redis
    loss degrades latency, never correctness.
 4. The fraud service can flag and hold, but only through its own tables and
-   documented state transitions — it cannot mutate ledger history.
+   documented state transitions. It cannot mutate ledger history.
 
 ## Technology
 
@@ -89,6 +89,6 @@ mvn spring-boot:run                   # app on :8080, Flyway migrates on boot
 curl localhost:8080/actuator/health
 ```
 
-Port note: host port **55432** is used on purpose — many dev machines
+Port note: host port **55432** is used on purpose. Many dev machines
 (including the one this was built on) already run a PostgreSQL on 5432, and a
 payments platform should never risk pointing at the wrong database.
