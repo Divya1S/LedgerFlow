@@ -21,7 +21,7 @@ class BoundaryRulesTest {
 
     private static final String[] CONTEXTS =
             {"identity", "account", "transfer", "payment", "ledger", "transactionquery", "outbox",
-             "fraud", "notification"};
+             "fraud", "notification", "activity"};
 
     private static JavaClasses classes;
 

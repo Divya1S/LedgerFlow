@@ -48,13 +48,14 @@ flowchart TB
 | Context | Responsibility | Talks to |
 |---|---|---|
 | `identity` | users, credentials, JWT, RBAC | PostgreSQL |
-| `account` | accounts, balances (read side) | PostgreSQL, Redis (cache) |
-| `transfer`/`payment` | money movement: the ACID write path | PostgreSQL (+outbox row) |
-| `ledger` | double-entry postings, invariants, reconciliation | PostgreSQL |
-| `transactionquery` | history, search, keyset pagination | PostgreSQL, Redis (cache) |
+| `account` | accounts, balances (read side), freeze, saved recipients, name check before paying | PostgreSQL, Redis (cache) |
+| `transfer`/`payment` | money movement: the ACID write path. Also scheduled transfers and money requests (`transfer`), disputes (`payment`) | PostgreSQL (+outbox row) |
+| `ledger` | double-entry postings, invariants, reconciliation, monthly partition upkeep | PostgreSQL |
+| `transactionquery` | history, search, keyset pagination, insights, CSV statements | PostgreSQL, Redis (cache) |
 | `outbox` | poll pending events, publish to Kafka | PostgreSQL → Kafka |
 | `fraud` | async rule evaluation of payment events | Kafka → PostgreSQL |
-| `notification` | async user notifications | Kafka → PostgreSQL |
+| `notification` | async user notifications and the inbox that reads them | Kafka → PostgreSQL |
+| `activity` | a user's own view of the audit trail | PostgreSQL |
 | `analytics` | async aggregates / reporting views | Kafka → PostgreSQL |
 | `common` | error model, correlation IDs, UUIDv7, audit | (none) |
 

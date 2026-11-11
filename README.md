@@ -1,224 +1,129 @@
 # LedgerFlow
 
 [![CI](https://github.com/Divya1S/LedgerFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/Divya1S/LedgerFlow/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/Divya1S/LedgerFlow/actions/workflows/codeql.yml/badge.svg)](https://github.com/Divya1S/LedgerFlow/actions/workflows/codeql.yml)
 ![Coverage](.github/badges/jacoco.svg)
-![Java 21](https://img.shields.io/badge/Java-21-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-A distributed payment and double-entry ledger platform where PostgreSQL is
-the transactional source of truth, built to survive concurrency, dependency
-outages and a skeptical code review.
+A digital wallet and payments app where every balance can be proven.
 
-![Payment with fraud verdict and AI analyst assessment](docs/media/payment-fraud-ai.png)
+Hold money in wallets, send it to people, pay businesses, and see where it
+went. Behind every number on the screen is a record you can open and check.
 
-## The 90 second tour
+![The LedgerFlow overview: balances, cash flow and spending](docs/media/overview.png)
 
-- **Money is exact, provably.** Every transfer writes balanced ledger
-  entries; a database trigger rejects any commit that does not sum to
-  zero. 1,000 concurrent transfers against one account: exactly the
-  affordable half succeed, the books stay exact.
-- **Chaos tested.** Kafka stopped and Redis paused under load: 102,110
-  requests, 0 failures, max latency 533ms, outbox drained after recovery.
-- **Measured, never invented.** Statement query 403ms to 0.48ms, OFFSET
-  vs keyset at depth 500k: 421ms vs 0.86ms, all with EXPLAIN ANALYZE
-  plans in the docs.
-- **AI where it earns its place.** An LLM fraud analyst investigates
-  flagged payments through read-only tools: local Ollama by default
-  (free, no key) or Gemini, scored by a golden-case eval suite that
-  caught a real prompt-injection weakness. It can flag money; it cannot
-  touch it.
-- **Full stack.** React dashboard, REST API with idempotency keys,
-  Prometheus + Grafana, Helm deployment on Kubernetes.
+## What you can do
 
-Prove the books yourself in one command (stack + app running):
+**Hold and move money**
 
-```bash
-./scripts/audit-demo.sh
-```
+- Open as many wallets as you like and see all balances in one place.
+- Send money to a friend. LedgerFlow shows you their name before you send.
+- Save the people you pay often, so you pick a name instead of typing an ID.
+- Schedule a transfer for a date, or repeat it every week or month.
+- Ask someone for money with a link they can pay in two clicks.
 
-![Audit demo](docs/media/audit-demo.gif)
+**Pay and get paid**
 
-## Architecture
+- Pay a business from your wallet and get a refund if something goes wrong.
+- Open a dispute when a payment was not what you agreed to.
+- Run your own business account, see who paid you, and refund in full or in part.
+- Every payment you receive is checked for fraud. Risky ones can come with
+  a short written explanation from an optional AI helper.
 
-```mermaid
-flowchart TB
-    Client([Client]) --> API[REST API\nJWT auth, validation, rate limiting]
-    API --> Identity[identity]
-    API --> Account[account]
-    API --> Money[transfer / payment]
-    Identity --> PG[(PostgreSQL\nsource of truth)]
-    Account --> PG
-    Money --> PG
-    Money -. same ACID transaction .-> Outbox[outbox row]
-    Outbox --> PG
-    Publisher[outbox publisher] --> PG
-    Publisher --> Kafka[[Kafka]]
-    Kafka --> Fraud[fraud consumer]
-    Kafka --> Notif[notification consumer]
-    Fraud --> PG
-    Notif --> PG
-    Redis[(Redis\ncache + rate limits\nnever authoritative)] -.-> API
-    Prom[Prometheus + Grafana] -.-> API
-```
+**Stay in control**
 
-One deployable, strict internal boundaries (a modular monolith by
-decision, [ADR-009](docs/decisions/ADR-009-modular-monolith.md)). The money
-path is a single database transaction: validate, claim idempotency key,
-lock balance rows in sorted order, write transaction + balanced ledger
-entries + balance updates + audit row + outbox row, commit.
+- See money in, money out and spending by category for the last 7, 30 or 90 days.
+- Search and filter every transaction.
+- Download a statement as a spreadsheet.
+- Freeze a wallet in one click. Money can still arrive, nothing can leave.
+- Get notified when you are paid, refunded or need to act.
+- Review a full history of sign-ins and changes on your profile.
 
-## Key engineering problems solved
+## Why you can trust the numbers
 
-- **Double spending**: pessimistic row locks in deterministic order, with a
-  database CHECK constraint as the last line of defense. Proven by 1,000
-  concurrent transfers over one balance: exactly the affordable half
-  succeed, the books stay exact.
-- **Double-entry integrity**: every transaction's ledger entries must sum
-  to zero, enforced by a deferred constraint trigger IN the database. An
-  unbalanced commit is impossible, not just unlikely.
-- **Idempotency**: key claim, operation and response snapshot commit in one
-  transaction. Concurrent duplicates block on the unique index and replay
-  the stored response. Survives restarts because the state is in Postgres.
-- **Event consistency**: transactional outbox to Kafka, at-least-once with
-  deduplicating consumers, dead-letter topics, and a broker outage test
-  that pauses Kafka mid-payment.
-- **Deadlocks**: reproduced on purpose, detected by PostgreSQL, recovered
-  by retry; made impossible between movements by sorted lock order.
-- **Performance**: measured, never invented. EXPLAIN ANALYZE before/after
-  for every index, OFFSET vs keyset at depth 500k, partition pruning.
+**Every movement is written down twice.** Money leaving one account and
+arriving in another are two entries that must cancel out. If they do not,
+the database refuses to save them. Open any transaction to see its entries.
 
-## AI fraud analyst
+**A request is never applied twice.** A double click or a dropped
+connection cannot send the same money a second time. The receipt after
+each transfer lets you try it.
 
-When the deterministic rule engine flags a payment, an LLM analyst
-investigates it through three read-only tools (payment details, payer
-velocity windows, merchant standing) and stores a structured risk
-assessment for the human reviewer. Two providers behind one interface:
-a local Ollama model by default (free, no key, no quota) or Gemini.
-Guardrails are structural: the model can only reach SELECT-backed tools,
-its output is advisory, and user text is passed as untrusted data. A
-golden-case eval suite measures risk-level accuracy and signal recall
-against the live models, and it earned its keep: it caught the local 7B
-model obeying a prompt injection that the hosted model resisted. Design,
-guardrails and measured scorecards:
-[docs/ai-fraud-copilot.md](docs/ai-fraud-copilot.md).
+**It keeps working when parts fail.** In an earlier two minute test with
+the message queue stopped and the cache frozen, 102,110 requests were made
+and none failed.
 
-## Dashboard
+**It holds up under pressure.** When 1,000 transfers were fired at one
+account at the same moment, exactly the ones the balance could afford went
+through, and the books were still exact afterwards.
 
-React + TypeScript (Vite), served from the Spring Boot jar. Register, open
-wallets and merchant accounts, move money with visible idempotency replay,
-statements with running balances on keyset cursors, payments with live
-fraud verdicts and AI assessments.
+## A look around
 
-![Statement with running balance](docs/media/accounts-statement.png)
-
-## Technology
-
-| Layer | Choice |
+| | |
 |---|---|
-| Backend | Java 21, Spring Boot 3.5, hand-written SQL via JdbcClient |
-| Frontend | React 18, TypeScript, Vite (served from the boot jar) |
-| Database | PostgreSQL 17, Flyway migrations, monthly partitioning |
-| Messaging | Kafka (KRaft), transactional outbox, DLT |
-| Cache | Redis (cache-aside + rate limiting, fail-open) |
-| AI | Gemini function calling over read-only tools, eval-scored |
-| Observability | Micrometer, Prometheus, Grafana, OTel tracing, ECS JSON logs |
-| Tests | JUnit 5, Testcontainers (Postgres, Kafka, Redis), k6, Playwright-verified UI |
-| Deploy | Docker, Helm on kind (real), Terraform for AWS (reference) |
+| ![An account statement with a running balance](docs/media/accounts-statement.png) | ![The ledger entries behind one payment](docs/media/ledger-entries.png) |
+| **Statements.** Every entry, with the balance after each one. | **Proof.** The entries behind a payment always add up to zero. |
+| ![A flagged payment with fraud check notes](docs/media/payment-fraud-ai.png) | ![A repeated request is recognised](docs/media/idempotency-replay.png) |
+| **Fraud check.** A flagged payment, with the reasons in plain words. | **Safe to retry.** The same request sent twice moves money once. |
 
-## Database engineering
+## Try it
 
-Schema, ER diagram and invariants: [docs/database-design.md](docs/database-design.md).
-Measured query work: [docs/query-optimization.md](docs/query-optimization.md), highlights on the
-5M transaction / 9.6M ledger entry dev dataset:
-
-| Case | Before | After |
-|---|---|---|
-| Account statement page | 403.5 ms (121k pages read) | 0.48 ms (60 pages) |
-| Wallet history | 201.4 ms | 14.9 ms |
-| Page at depth 500,000 | OFFSET: 421 ms | keyset: 0.86 ms |
-| One-month aggregate | all partitions: 277 ms | pruned: 44 ms |
-
-Advanced SQL showcase (window functions, CTEs, FILTER aggregates):
-[docs/sql/](docs/sql/).
-
-## Performance (real runs, laptop honesty included)
-
-k6, 53 VUs, 5 concurrent scenarios, 60s: **44,375 requests, 688 req/s,
-zero failures.** Transfers p95 103ms, hot-wallet contention p95 105ms,
-payments p95 137ms. Details and caveats: [docs/performance.md](docs/performance.md).
-
-## Reliability
-
-Chaos test: 120s of transfers while Kafka is stopped and Redis is paused.
-102,110 requests, zero failures, ledger sum exactly zero afterwards, outbox
-drained. The first run found two real bugs (60s Lettuce timeout, outbox
-publisher throughput) that were fixed and re-measured.
-[docs/failure-handling.md](docs/failure-handling.md).
-
-A column rename was executed live with zero failed requests during the
-migration: [docs/zero-downtime-migration.md](docs/zero-downtime-migration.md).
-
-## Observability
-
-Prometheus + Grafana provisioned from the repo (`docker compose up`),
-domain metrics (movements, outbox lag, cache ratio, deadlock retries),
-traces with ids in every log line: [docs/observability.md](docs/observability.md).
-
-![Grafana during a load test](docs/media/grafana-under-load.png)
-
-## API
-
-OpenAPI at `/v3/api-docs`, Swagger UI at `/swagger-ui.html`. Money
-endpoints require an `Idempotency-Key` header. Errors share one shape with
-stable codes and correlation ids.
-
-## Local development
+You need [Docker](https://www.docker.com/products/docker-desktop/) and Java 21.
 
 ```bash
-export JAVA_HOME="$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home"
-
-docker compose up -d          # Postgres :55432, Kafka :9092, Redis :6379,
-                              # Prometheus :9090, Grafana :3000
-mvn verify                    # unit + integration tests (Testcontainers)
-mvn -Pwith-ui package         # build with the React dashboard in the jar
-java -jar target/ledgerflow-0.1.0-SNAPSHOT.jar   # app + dashboard on :8080
-
-# optional AI fraud analyst (free Gemini key from aistudio.google.com):
-# AI_ENABLED=true GEMINI_API_KEY=... java -jar target/ledgerflow-*.jar
-
-# optional: 5M transaction dataset for query work
-docker exec -i ledgerflow-postgres psql -U ledgerflow -d ledgerflow \
-    -f - < scripts/seed-dev-data.sql
+docker compose up -d                              # start the database and its helpers
+mvn -Pwith-ui package -DskipTests                 # build the app
+java -jar target/ledgerflow-0.1.0-SNAPSHOT.jar    # run it
 ```
 
-Docker Engine 29 note: Testcontainers 1.x needs
-`src/test/resources/docker-java.properties` with `api.version=1.44`
-(already in the repo).
+In a second terminal, add some demo data:
 
-## Deployment
+```bash
+./scripts/seed-demo.sh
+```
 
-Real target (zero cost): a local kind cluster via
-`./deploy/kind/deploy-kind.sh` (builds the image, installs the Helm chart
-with probes/HPA/secrets, smoke tests health). The AWS production shape
-(EKS, Multi-AZ RDS, ElastiCache, MSK) exists as validate-clean Terraform in
-[deploy/terraform/aws](deploy/terraform/aws), deliberately never applied;
-that is documented, not hidden.
+Then open <http://localhost:8080> and sign in:
 
-## Engineering decisions
+| | |
+|---|---|
+| Email | `maya@demo.ledgerflow.io` |
+| Password | `demo-password-123` |
 
-Nine ADRs in [docs/decisions/](docs/decisions/): source of truth, outbox,
-Kafka, Redis boundaries, isolation level, concurrency control, pagination,
-partitioning, modular monolith. Scaling story: [docs/scalability.md](docs/scalability.md).
+Maya has three wallets, a small design business and eleven weeks of
+history. Sign in as `daniel@demo.ledgerflow.io` in a private window to see
+the other side of her transfers. You can also create your own profile from
+the sign-in page.
 
-## Lessons learned
+All money here is pretend. Nothing connects to a real bank.
 
-- Partition bounds are session-timezone sensitive: two clients created
-  misaligned monthly partitions with a 7-hour insert-rejecting gap between
-  them. Bounds are now explicit UTC instants.
-- Fail-open is only as fast as the client timeout in front of it: chaos
-  testing caught 25s hangs behind Lettuce's 60s default.
-- Throughput claims need measuring: the outbox publisher's default batch
-  size fell 65k events behind a burst the first time it was pushed.
-- The database is the best code reviewer: the zero-sum trigger and balance
-  CHECK caught every mistake the tests threw at them.
+## How it is built
+
+| Part | What it does | Built with |
+|---|---|---|
+| Dashboard | The screens you see | React, TypeScript |
+| Server | Checks every request and applies the rules | Java, Spring Boot |
+| Database | The one place the truth about money lives | PostgreSQL |
+| Message queue | Passes on news of each payment, for alerts and fraud checks | Kafka |
+| Cache | Makes repeat views fast. Never trusted for balances | Redis |
+| Fraud notes | Writes the explanation for flagged payments | A local AI model, optional |
+
+## Learn more
+
+For the detail behind the claims on this page:
+
+- [Engineering overview](docs/engineering-overview.md): how it is put together, with measurements
+- [Product features](docs/product-features.md): each feature and the rule it keeps
+- [Database design](docs/database-design.md)
+- [What happens when things fail](docs/failure-handling.md)
+- [Security](docs/security.md)
+- [The AI fraud notes](docs/ai-fraud-copilot.md)
+- [Design decisions](docs/decisions/)
+
+## Not included yet
+
+Shared team accounts with approvals, two-step sign-in, more than one
+currency, and spending limits. The reasons are in
+[product features](docs/product-features.md#not-built-and-why).
+
+## License
+
+[MIT](LICENSE)

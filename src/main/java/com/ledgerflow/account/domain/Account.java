@@ -10,5 +10,6 @@ public record Account(
         String currency,
         String status,
         String name,
+        String category,
         OffsetDateTime createdAt) {
 }

@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Transfers", description = "Send, add and withdraw money")
 public class TransferController {
 
     private final TransferService transferService;

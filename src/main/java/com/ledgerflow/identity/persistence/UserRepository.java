@@ -44,6 +44,20 @@ public class UserRepository {
                 .optional();
     }
 
+    public int updateDisplayName(UUID id, String displayName) {
+        return jdbc.sql("UPDATE users SET display_name = :displayName WHERE id = :id")
+                .param("id", id)
+                .param("displayName", displayName)
+                .update();
+    }
+
+    public int updatePasswordHash(UUID id, String passwordHash) {
+        return jdbc.sql("UPDATE users SET password_hash = :passwordHash WHERE id = :id")
+                .param("id", id)
+                .param("passwordHash", passwordHash)
+                .update();
+    }
+
     private User map(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         return new User(
                 rs.getObject("id", UUID.class),

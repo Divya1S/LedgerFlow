@@ -1,107 +1,143 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { Account, api, formatMoney, Page, StatementLine } from '../api';
+import { FormEvent, useState } from 'react';
+import { Account, api, errorMessage } from '../api';
+import { accountTypeLabel, categoryLabel, formatMoney, MERCHANT_CATEGORIES } from '../format';
+import { navigate, useLoad } from '../hooks';
+import { Icon } from '../icons';
+import { Button, Card, EmptyState, Field, LoadingRows, Modal, Notice, PageHeader, Segmented, StatusBadge, useToast } from '../ui';
 
-interface AccountWithBalance extends Account {
-  balanceMinorUnits?: number;
-}
+export default function AccountsView({ autoOpen = false }: { autoOpen?: boolean }) {
+  const accounts = useLoad(() => api.accounts(), []);
+  const [opening, setOpening] = useState(autoOpen);
 
-export default function AccountsView() {
-  const [accounts, setAccounts] = useState<AccountWithBalance[]>([]);
-  const [selected, setSelected] = useState<AccountWithBalance | null>(null);
-  const [statement, setStatement] = useState<StatementLine[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState('USER_WALLET');
-
-  const reload = useCallback(async () => {
-    const { data } = await api.accounts();
-    const withBalances = await Promise.all(data.map(async (account) => {
-      const { data: balance } = await api.balance(account.id);
-      return { ...account, balanceMinorUnits: balance.balanceMinorUnits };
-    }));
-    setAccounts(withBalances);
-  }, []);
-
-  useEffect(() => { reload().catch(console.error); }, [reload]);
-
-  async function open(account: AccountWithBalance) {
-    setSelected(account);
-    const { data } = await api.statement(account.id);
-    setStatement(data.items);
-    setNextCursor(data.nextCursor);
-  }
-
-  async function loadMore() {
-    if (!selected || !nextCursor) return;
-    const { data }: { data: Page<StatementLine> } = await api.statement(selected.id, nextCursor);
-    setStatement((current) => [...current, ...data.items]);
-    setNextCursor(data.nextCursor);
-  }
-
-  async function createAccount(event: FormEvent) {
-    event.preventDefault();
-    await api.openAccount(newType, newName);
-    setNewName('');
-    await reload();
-  }
+  const list = accounts.data ?? [];
+  const open = list.filter((a) => a.status !== 'CLOSED');
+  const closed = list.filter((a) => a.status === 'CLOSED');
+  const total = open.reduce((sum, a) => sum + a.balanceMinorUnits, 0);
 
   return (
     <>
-      <div className="panel">
-        <h2>Your accounts</h2>
-        <div className="grid">
-          {accounts.map((account) => (
-            <div key={account.id} className="card" onClick={() => open(account)}>
-              <div className="name">{account.name} <span className={`chip ${account.status}`}>{account.type}</span></div>
-              <div className="amount">{formatMoney(account.balanceMinorUnits ?? 0)}</div>
-              <div className="meta">{account.id}</div>
-            </div>
-          ))}
-        </div>
-        <form className="stack" style={{ marginTop: 16 }} onSubmit={createAccount}>
-          <div className="row">
-            <input placeholder="Account name" value={newName}
-                   onChange={(e) => setNewName(e.target.value)} required maxLength={120} />
-            <select value={newType} onChange={(e) => setNewType(e.target.value)}>
-              <option value="USER_WALLET">Wallet</option>
-              <option value="MERCHANT">Merchant</option>
-            </select>
-            <button className="primary">Open account</button>
-          </div>
-        </form>
+      <PageHeader
+        title="Accounts"
+        description={accounts.data && open.length > 0
+          ? `${formatMoney(total)} across ${open.length} ${open.length === 1 ? 'account' : 'accounts'}`
+          : 'Wallets hold your money. Merchant accounts take payments.'}
+        actions={<Button variant="primary" icon="plus" onClick={() => setOpening(true)}>Open account</Button>}
+      />
+
+      {accounts.error && <Notice tone="error">{accounts.error}</Notice>}
+      {!accounts.data && !accounts.error && <Card flush><LoadingRows /></Card>}
+
+      {accounts.data && list.length === 0 && (
+        <Card flush>
+          <EmptyState icon="wallet" title="You have no accounts yet"
+                      action={<Button variant="primary" icon="plus" onClick={() => setOpening(true)}>Open account</Button>}>
+            Open a wallet to hold money, or a merchant account to take payments.
+          </EmptyState>
+        </Card>
+      )}
+
+      <div className="account-grid">
+        {open.map((account) => <AccountCard key={account.id} account={account} />)}
       </div>
 
-      {selected && (
-        <div className="panel">
-          <h2>Statement: {selected.name} <span className="muted">(running balance)</span></h2>
-          <table>
-            <thead>
-              <tr><th>When</th><th>Direction</th><th>Amount</th><th>Balance after</th><th>Transaction</th></tr>
-            </thead>
-            <tbody>
-              {statement.map((line) => (
-                <tr key={line.entryId}>
-                  <td>{new Date(line.createdAt).toLocaleString()}</td>
-                  <td><span className={line.amountMinorUnits > 0 ? 'pos' : 'neg'}>{line.direction}</span></td>
-                  <td className={line.amountMinorUnits > 0 ? 'pos' : 'neg'}>
-                    {formatMoney(line.amountMinorUnits)}
-                  </td>
-                  <td>{formatMoney(line.balanceAfterMinorUnits)}</td>
-                  <td className="mono-small">{line.transactionId.slice(0, 8)}</td>
-                </tr>
-              ))}
-              {statement.length === 0 && (
-                <tr><td colSpan={5} className="muted">No entries yet</td></tr>
-              )}
-            </tbody>
-          </table>
-          {nextCursor && (
-            <button className="secondary" style={{ marginTop: 10 }} onClick={loadMore}>
-              Load more
-            </button>
-          )}
+      {closed.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <h2 style={{ marginBottom: 12 }}>Closed</h2>
+          <div className="account-grid">
+            {closed.map((account) => <AccountCard key={account.id} account={account} />)}
+          </div>
         </div>
       )}
+
+      <OpenAccountModal open={opening} onClose={() => setOpening(false)}
+                        onOpened={(account) => { setOpening(false); navigate(`/accounts/${account.id}`); }} />
     </>
+  );
+}
+
+function AccountCard({ account }: { account: Account }) {
+  return (
+    <a className={`card account-card ${account.status === 'CLOSED' ? 'closed' : ''}`} href={`#/accounts/${account.id}`}>
+      <div className="row between" style={{ flexWrap: 'nowrap' }}>
+        <div className="party">
+          <span className="txn-icon"><Icon name={account.type === 'MERCHANT' ? 'store' : 'wallet'} size={15} /></span>
+          <div>
+            <div className="truncate" style={{ fontWeight: 600 }}>{account.name}</div>
+            <div className="muted" style={{ fontSize: 12.5 }}>
+              {accountTypeLabel(account.type)}{account.category ? ` · ${categoryLabel(account.category)}` : ''}
+            </div>
+          </div>
+        </div>
+        {account.status !== 'ACTIVE' && <StatusBadge status={account.status} />}
+      </div>
+      <div className="balance">{formatMoney(account.balanceMinorUnits, account.currency)}</div>
+      <div className="muted" style={{ fontSize: 12.5 }}>Available balance</div>
+    </a>
+  );
+}
+
+function OpenAccountModal({ open, onClose, onOpened }: {
+  open: boolean; onClose: () => void; onOpened: (account: Account) => void;
+}) {
+  const toast = useToast();
+  const [type, setType] = useState<'USER_WALLET' | 'MERCHANT'>('USER_WALLET');
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('OTHER');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const account = await api.openAccount(type, name.trim(), category);
+      toast(`${account.name} is open`);
+      setName('');
+      onOpened(account);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} title="Open an account" onClose={onClose}
+           description="It is free and ready to use straight away.">
+      <form className="stack" onSubmit={submit}>
+        <div className="field">
+          <span className="label">What is it for?</span>
+          <Segmented label="Account type" value={type} onChange={setType} options={[
+            { value: 'USER_WALLET', label: 'Personal wallet' },
+            { value: 'MERCHANT', label: 'Merchant account' },
+          ]} />
+          <span className="hint">
+            {type === 'USER_WALLET'
+              ? 'Hold money, send it to people and pay merchants.'
+              : 'Take payments from customers. A 1% fee is taken from each payment.'}
+          </span>
+        </div>
+        <Field label={type === 'MERCHANT' ? 'Business name' : 'Account name'}
+               hint={type === 'MERCHANT' ? 'Customers see this name when they pay you.' : 'Only you see this name.'}>
+          {(id) => <input id={id} className="input" value={name} onChange={(e) => setName(e.target.value)}
+                          placeholder={type === 'MERCHANT' ? 'Corner Grocery' : 'Everyday'} required maxLength={120} />}
+        </Field>
+        {type === 'MERCHANT' && (
+          <Field label="What do you sell?" hint="Lets your customers see their spending by category.">
+            {(id) => (
+              <select id={id} className="input" value={category} onChange={(e) => setCategory(e.target.value)}>
+                {MERCHANT_CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel(c)}</option>)}
+              </select>
+            )}
+          </Field>
+        )}
+        {error && <Notice tone="error">{error}</Notice>}
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" busy={busy} disabled={!name.trim()}>Open account</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }

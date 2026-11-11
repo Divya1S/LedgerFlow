@@ -30,10 +30,34 @@ public class ApiTestClient {
         return registerAndLogin(email, "correct-horse-battery-staple");
     }
 
-    @SuppressWarnings("unchecked")
+    /** Registers a fresh user with a chosen display name and logs in. */
+    public Session registerNamed(String fullName) {
+        String email = "user-" + UUID.randomUUID() + "@test.ledgerflow.io";
+        return registerAndLogin(email, "correct-horse-battery-staple", fullName);
+    }
+
     public Session registerAndLogin(String email, String password) {
+        return registerAndLogin(email, password, "Test User");
+    }
+
+    /** Logs in again, for a fresh token after the user's role changed. */
+    @SuppressWarnings("unchecked")
+    public Session login(String email, String password) {
+        ResponseEntity<Map> login = post(null, "/api/v1/auth/login",
+                Map.of("email", email, "password", password));
+        if (!login.getStatusCode().is2xxSuccessful()) {
+            throw new IllegalStateException("login failed: " + login.getStatusCode());
+        }
+        return new Session(
+                UUID.fromString((String) login.getBody().get("userId")),
+                (String) login.getBody().get("accessToken"),
+                email);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Session registerAndLogin(String email, String password, String fullName) {
         ResponseEntity<Map> register = post(null, "/api/v1/auth/register",
-                Map.of("email", email, "password", password, "fullName", "Test User"));
+                Map.of("email", email, "password", password, "fullName", fullName));
         if (!register.getStatusCode().is2xxSuccessful()) {
             throw new IllegalStateException("register failed: " + register.getStatusCode() + " " + register.getBody());
         }
@@ -67,6 +91,19 @@ public class ApiTestClient {
             headers.setBearerAuth(token);
         }
         return rest.exchange(path, HttpMethod.GET, new HttpEntity<>(headers), java.util.List.class);
+    }
+
+    public ResponseEntity<Map> patch(String token, String path, Object body) {
+        return exchange(token, HttpMethod.PATCH, path, body, null);
+    }
+
+    /** For endpoints that do not return JSON (file downloads). */
+    public ResponseEntity<String> getText(String token, String path) {
+        HttpHeaders headers = new HttpHeaders();
+        if (token != null) {
+            headers.setBearerAuth(token);
+        }
+        return rest.exchange(path, HttpMethod.GET, new HttpEntity<>(headers), String.class);
     }
 
     public ResponseEntity<Map> delete(String token, String path) {

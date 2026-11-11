@@ -175,6 +175,32 @@ public class PaymentService {
                 payment.sourceAccountId(), payment.destinationAccountId(), payment.createdAt());
     }
 
+    /** One row of the payments list, from the caller's side of the payment. */
+    public record PaymentListItem(UUID paymentId, UUID transactionId, String status,
+                                  long amountMinorUnits, long feeMinorUnits, long refundedMinorUnits,
+                                  String currency, String description, String payerName,
+                                  String merchantName, String merchantCategory, String role,
+                                  UUID disputeId, String disputeStatus, OffsetDateTime createdAt) {
+    }
+
+    /**
+     * Payments the caller made (role PAYER) or received on their merchant
+     * accounts (role MERCHANT), newest first.
+     */
+    public List<PaymentListItem> list(UUID userId, boolean asMerchant,
+                                      OffsetDateTime cursorTime, UUID cursorId, int limit) {
+        String role = asMerchant ? "MERCHANT" : "PAYER";
+        return payments.list(userId, asMerchant, cursorTime, cursorId, limit).stream()
+                .map(row -> {
+                    PaymentRow p = row.payment();
+                    return new PaymentListItem(p.id(), p.transactionId(), p.status(), p.amount(),
+                            fee(p.amount()), p.refundedAmount(), p.currency(), row.description(),
+                            row.payerName(), row.merchantName(), row.merchantCategory(), role,
+                            row.disputeId(), row.disputeStatus(), p.createdAt());
+                })
+                .toList();
+    }
+
     /** Authorization guard for merchant-only payment surfaces (404 if not allowed). */
     public void requireMerchantOrAdmin(UUID callerUserId, boolean callerIsAdmin, UUID paymentId) {
         PaymentRow payment = payments.findById(paymentId)

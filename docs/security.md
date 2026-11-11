@@ -27,17 +27,55 @@
 
 - Bean Validation on every request DTO (amount bounds, currency pattern,
   size limits); malformed bodies get a stable 400 shape.
-- 100% of SQL goes through `JdbcClient` bound parameters. There is no
-  string-concatenated SQL anywhere in the codebase. The
+- Every value goes through `JdbcClient` bound parameters. Some queries
+  are assembled from parts (optional search filters, a shared expression
+  for naming the other party), and those parts are fixed strings in the
+  code. Nothing a client sends is ever concatenated into SQL. The
   `sqlInjectionAttemptsAreStoredAsLiterals` test stores an injection
   payload and proves it lands as inert data.
+- Search text is matched literally: `%` and `_` typed by a person are
+  escaped before they reach `ILIKE`.
+- Invalid query parameters (a bad date, an unknown filter value) are
+  answered with a 400 and the field at fault, not a 500.
 - Error responses never leak internals: unexpected exceptions log with the
   correlation id and return a generic 500 body.
+
+## What other people can learn about you
+
+- Looking up an account id returns a display name, the account type and
+  whether it is closed. No balance, no email, no other accounts. A wallet
+  is shown by its owner's name, never by the owner's private label for it.
+- A money request shows the payer who is asking, the amount and the note.
+  The receiving account id is not exposed, and the pay endpoint checks
+  ownership of the source account before loading the request so that
+  error codes cannot be used to work it out.
+- Fraud verdicts and analyst notes are shown to the merchant who received
+  the payment and to admins, never to the payer.
+- The activity feed returns only rows the caller acted in, and only the
+  action, time and reference. Before and after state stays internal.
+
+## Protecting an account
+
+- Changing a password needs the current one, so a borrowed, still
+  signed-in browser is not enough to take a profile over. Tokens already
+  issued stay valid until they expire (they are stateless), which is why
+  their lifetime is short.
+- Freezing an account stops money leaving it without closing it. Only the
+  owner (or an admin) can freeze or unfreeze.
+- A merchant cannot close a dispute in its own favour. Declining passes
+  the decision to a platform admin.
+- CSV exports defuse spreadsheet formulas: text starting with `=`, `+`,
+  `-` or `@` is written as text, so a hostile description cannot run when
+  the file is opened.
+- The dashboard keeps the sign-in token in `sessionStorage`: it survives a
+  page reload and ends when the tab closes. That is readable by any script
+  on the page, so the page loads no third-party scripts or fonts.
 
 ## Abuse controls
 
 - Per-user fixed-window rate limit (30/min default) on money-writing
-  endpoints, counted in Redis, fail-open (a Redis outage must not become a
+  endpoints (including paying a money request and deciding a dispute),
+  counted in Redis, fail-open (a Redis outage must not become a
   write outage; correctness never depended on throttling).
 - Idempotency keys are scoped per user and endpoint: one user cannot
   replay or collide with another user's keys.

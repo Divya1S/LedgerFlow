@@ -17,6 +17,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Sign in", description = "Register and get a token")
 public class AuthController {
 
     private final IdentityService identityService;
@@ -37,7 +38,8 @@ public class AuthController {
     public record LoginRequest(@NotBlank @Email String email, @NotBlank String password) {
     }
 
-    public record LoginResponse(String accessToken, String tokenType, UUID userId) {
+    public record LoginResponse(String accessToken, String tokenType, UUID userId,
+                                String email, String fullName, String role) {
     }
 
     @PostMapping("/register")
@@ -53,6 +55,7 @@ public class AuthController {
     ResponseEntity<LoginResponse> login(@jakarta.validation.Valid @RequestBody LoginRequest request) {
         IdentityService.AuthResult result = identityService.login(request.email(), request.password());
         return ResponseEntity.status(HttpStatus.OK)
-                .body(new LoginResponse(result.token(), "Bearer", result.user().id()));
+                .body(new LoginResponse(result.token(), "Bearer", result.user().id(),
+                        result.user().email(), result.user().fullName(), result.user().role()));
     }
 }

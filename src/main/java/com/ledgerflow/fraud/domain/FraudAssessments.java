@@ -1,6 +1,9 @@
 package com.ledgerflow.fraud.domain;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,6 +25,24 @@ public class FraudAssessments {
 
     public record Assessment(String verdict, int score, String ruleHitsJson,
                              String aiAssessmentJson, String aiModel, OffsetDateTime aiAssessedAt) {
+    }
+
+    /** The latest verdict for each of the given payments that has one. */
+    public Map<UUID, String> verdictsFor(Collection<UUID> paymentIds) {
+        if (paymentIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> verdicts = new HashMap<>();
+        jdbc.sql("""
+                        SELECT DISTINCT ON (payment_id) payment_id, verdict
+                        FROM fraud_decisions
+                        WHERE payment_id = ANY(:ids)
+                        ORDER BY payment_id, evaluated_at DESC
+                        """)
+                .param("ids", paymentIds.toArray(UUID[]::new))
+                .query((rs, n) -> verdicts.put(rs.getObject("payment_id", UUID.class), rs.getString("verdict")))
+                .list();
+        return verdicts;
     }
 
     public Optional<Assessment> forPayment(UUID paymentId) {

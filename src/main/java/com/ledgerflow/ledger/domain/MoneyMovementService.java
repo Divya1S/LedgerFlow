@@ -27,6 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
  *    committed state. READ COMMITTED is enough with this locking.
  *  - The CHECK constraint on account_balances and the deferred zero-sum
  *    trigger on ledger_entries remain as database-level backstops.
+ *
+ * Account status comes back with the locked row: ACTIVE accounts move
+ * money both ways, FROZEN accounts only receive, CLOSED accounts do neither.
  */
 @Service
 public class MoneyMovementService {
@@ -74,7 +77,16 @@ public class MoneyMovementService {
         }
 
         for (LockedAccount account : locked.values()) {
-            if (!"ACTIVE".equals(account.status())) {
+            long delta = deltaByAccount.get(account.id());
+            // A frozen account is locked against money leaving, not against
+            // money arriving: a refund or an incoming transfer still lands.
+            // Anything else that is not ACTIVE (closed) takes no part at all.
+            if ("FROZEN".equals(account.status())) {
+                if (delta < 0) {
+                    throw ApiException.conflict("ACCOUNT_FROZEN",
+                            "Account " + account.id() + " is frozen; unfreeze it to send money");
+                }
+            } else if (!"ACTIVE".equals(account.status())) {
                 throw ApiException.conflict("ACCOUNT_NOT_ACTIVE",
                         "Account " + account.id() + " is not active");
             }
@@ -82,7 +94,7 @@ public class MoneyMovementService {
                 throw ApiException.unprocessable("CURRENCY_MISMATCH",
                         "Account " + account.id() + " does not hold " + currency);
             }
-            long newBalance = account.balance() + deltaByAccount.get(account.id());
+            long newBalance = account.balance() + delta;
             if (account.minBalance() != null && newBalance < account.minBalance()) {
                 meterRegistry.counter("ledgerflow.movements", "type", type, "result", "insufficient_funds")
                         .increment();

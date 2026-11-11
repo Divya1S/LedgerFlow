@@ -1,5 +1,6 @@
 package com.ledgerflow.identity.domain;
 
+import java.util.Map;
 import java.util.UUID;
 
 import com.ledgerflow.common.audit.AuditLogger;
@@ -57,6 +58,38 @@ public class IdentityService {
         audit.record(user.id(), "USER_LOGIN", "user", user.id().toString(),
                 null, null, "identity", null);
         return new AuthResult(user, jwtService.issueToken(user));
+    }
+
+    @Transactional
+    public User updateName(UUID userId, String fullName) {
+        User user = requireUser(userId);
+        String name = fullName.strip();
+        if (!name.equals(user.fullName())) {
+            users.updateDisplayName(userId, name);
+            audit.recordChange(userId, "PROFILE_UPDATED", "user", userId.toString(),
+                    Map.of("fullName", user.fullName()), Map.of("fullName", name), "identity", null);
+        }
+        return requireUser(userId);
+    }
+
+    /**
+     * Changing a password needs the current one, so a borrowed, still
+     * signed-in browser is not enough to take the account over. Tokens
+     * already issued stay valid until they expire: they are stateless by
+     * design (see docs/security.md) and their lifetime is short.
+     */
+    @Transactional
+    public void changePassword(UUID userId, String currentPassword, String newPassword) {
+        User user = requireUser(userId);
+        if (!passwordEncoder.matches(currentPassword, user.passwordHash())) {
+            throw ApiException.unprocessable("WRONG_PASSWORD", "The current password is not correct");
+        }
+        if (passwordEncoder.matches(newPassword, user.passwordHash())) {
+            throw ApiException.unprocessable("PASSWORD_UNCHANGED",
+                    "The new password must be different from the current one");
+        }
+        users.updatePasswordHash(userId, passwordEncoder.encode(newPassword));
+        audit.record(userId, "PASSWORD_CHANGED", "user", userId.toString(), null, null, "identity", null);
     }
 
     public User requireUser(UUID id) {

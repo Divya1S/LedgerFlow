@@ -24,6 +24,12 @@ erDiagram
     refunds |o--|| transactions : "settled by"
     payments |o--o| payment_methods : "funded via"
     payments ||--o{ fraud_decisions : "evaluated by"
+    users ||--o{ recipients : saves
+    accounts ||--o{ recipients : "saved as"
+    users ||--o{ scheduled_transfers : schedules
+    accounts ||--o{ scheduled_transfers : "from / to"
+    users ||--o{ payment_requests : "asks with"
+    payment_requests |o--o| transactions : "paid by"
     outbox_events ||--o{ processed_events : "deduped by consumers"
 
     users {
@@ -128,6 +134,10 @@ system accounts and `0` for user wallets.
 | No duplicate payment per client retry | `UNIQUE (user_id, endpoint, idem_key)` | uniqueness under concurrency is a database problem |
 | Refunds never exceed the payment | `CHECK (refunded_amount <= amount)` | concurrent partial refunds must not oversell |
 | Amounts are valid | `CHECK (amount > 0)` on transactions, `CHECK (amount <> 0)` on entries | garbage amounts stopped at the boundary |
+| One open dispute per payment | partial `UNIQUE (payment_id) WHERE status IN ('OPEN', 'UNDER_REVIEW')` | two quick clicks would both pass a check-then-insert |
+| A money request is paid exactly when it points at the transfer that paid it | `CHECK ((status = 'PAID') = (transaction_id IS NOT NULL))` | "paid" must never be a claim without the money |
+| An active schedule always knows its next date | `CHECK (status <> 'ACTIVE' OR next_run_at IS NOT NULL)` | a schedule with no next date would silently never run |
+| A recipient is saved once per person | `UNIQUE (owner_user_id, account_id)` | same reason as the dispute index |
 
 ## Key modeling decisions
 
@@ -184,6 +194,20 @@ paths like `accounts.user_id`, the partial index on pending outbox rows, and
 audit lookup paths). Query-driven indexes are added **with the queries that
 need them** in Phase 4, each documented with plan evidence in
 [query-optimization.md](query-optimization.md).
+
+V6 adds indexes for the new list screens, each named for the list it
+serves: payments received by a merchant account, a user's own activity
+feed, due schedules (partial, active rows only) and unread notifications
+(partial). The tables, columns and reasons are in the migration's comments
+and in [product-features.md](product-features.md).
+
+## Partition upkeep
+
+`transactions` and `ledger_entries` are partitioned by month with no
+DEFAULT partition, so the months have to exist before rows arrive.
+`PartitionMaintenance` checks at startup and once a day that this month
+and the next three are present and creates any that are missing, with the
+zero-sum trigger attached to each new ledger partition.
 
 ## Verification
 

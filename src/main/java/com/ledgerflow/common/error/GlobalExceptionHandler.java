@@ -5,15 +5,20 @@ import java.util.List;
 
 import com.ledgerflow.common.web.CorrelationIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -32,6 +37,54 @@ public class GlobalExceptionHandler {
                 .map(f -> new ErrorResponse.FieldError(f.getField(), f.getDefaultMessage()))
                 .toList();
         return respond(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request, details);
+    }
+
+    /**
+     * Constraint annotations on query and path parameters (limit, type,
+     * direction). Without this they fall through to the catch-all below
+     * and a typo in a URL is reported as a server error.
+     */
+    @ExceptionHandler({ConstraintViolationException.class, HandlerMethodValidationException.class})
+    ResponseEntity<ErrorResponse> handleParameterValidation(Exception e, HttpServletRequest request) {
+        List<ErrorResponse.FieldError> details = List.of();
+        if (e instanceof ConstraintViolationException violations) {
+            details = violations.getConstraintViolations().stream()
+                    .map(v -> new ErrorResponse.FieldError(lastNode(v.getPropertyPath().toString()), v.getMessage()))
+                    .toList();
+        } else if (e instanceof HandlerMethodValidationException invalid) {
+            details = invalid.getParameterValidationResults().stream()
+                    .flatMap(result -> result.getResolvableErrors().stream()
+                            .map(error -> new ErrorResponse.FieldError(
+                                    result.getMethodParameter().getParameterName(), error.getDefaultMessage())))
+                    .toList();
+        }
+        return respond(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Request validation failed", request, details);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e,
+                                                     HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, "INVALID_PARAMETER",
+                "Parameter '" + e.getName() + "' has an invalid value", request, List.of());
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    ResponseEntity<ErrorResponse> handleMissingParameter(MissingServletRequestParameterException e,
+                                                         HttpServletRequest request) {
+        return respond(HttpStatus.BAD_REQUEST, "MISSING_PARAMETER",
+                "Parameter '" + e.getParameterName() + "' is required", request, List.of());
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ErrorResponse> handleMethodNotAllowed(HttpRequestMethodNotSupportedException e,
+                                                         HttpServletRequest request) {
+        return respond(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED",
+                "This endpoint does not support " + e.getMethod(), request, List.of());
+    }
+
+    private static String lastNode(String propertyPath) {
+        int dot = propertyPath.lastIndexOf('.');
+        return dot < 0 ? propertyPath : propertyPath.substring(dot + 1);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

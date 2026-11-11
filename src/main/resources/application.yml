@@ -83,6 +83,13 @@ ledgerflow:
   fraud:
     large-amount: 100000      # $1,000.00 in minor units
     very-large-amount: 500000 # $5,000.00
+  scheduled-transfers:
+    # How often the runner looks for transfers that are due. A schedule
+    # runs at most this long after its time; exactly-once does not depend
+    # on the interval (see ScheduledTransferService).
+    enabled: ${SCHEDULED_TRANSFERS_ENABLED:true}
+    poll-interval-ms: ${SCHEDULED_TRANSFERS_POLL_MS:15000}
+    batch-size: 50
   outbox:
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:200}
     # Sized from chaos-test measurement: 100/500ms (200 events/s) fell

@@ -3,6 +3,7 @@ package com.ledgerflow.payment.persistence;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,6 +22,12 @@ public class PaymentRepository {
     public record PaymentRow(UUID id, UUID payerUserId, UUID sourceAccountId, UUID destinationAccountId,
                              long amount, long refundedAmount, String currency, String status,
                              UUID transactionId, OffsetDateTime createdAt) {
+    }
+
+    /** A payment as a list shows it: who paid whom, for what, and any dispute. */
+    public record PaymentListRow(PaymentRow payment, String description, String payerName,
+                                 String merchantName, String merchantCategory, UUID merchantUserId,
+                                 UUID disputeId, String disputeStatus) {
     }
 
     public void insertPending(UUID id, UUID payerUserId, UUID sourceAccountId,
@@ -66,6 +73,60 @@ public class PaymentRepository {
                 .param("id", id)
                 .query(this::map)
                 .optional();
+    }
+
+    /**
+     * Payments the user made (asMerchant = false) or received on their
+     * merchant accounts (asMerchant = true), newest first, keyset paged.
+     * Each side reads its own index: (payer_user_id, created_at DESC) or
+     * (destination_account_id, created_at DESC, id DESC). The description
+     * and the latest dispute are looked up for the page's rows only.
+     */
+    public List<PaymentListRow> list(UUID userId, boolean asMerchant,
+                                     OffsetDateTime cursorTime, UUID cursorId, int limit) {
+        String side = asMerchant
+                ? "p.destination_account_id IN (SELECT id FROM accounts WHERE user_id = :userId)"
+                : "p.payer_user_id = :userId";
+        String keyset = cursorTime == null ? "" : " AND (p.created_at, p.id) < (:cts, :cid)";
+        var spec = jdbc.sql("""
+                        SELECT p.*, t.description,
+                               pu.display_name AS payer_name,
+                               m.name AS merchant_name, m.category AS merchant_category,
+                               m.user_id AS merchant_user_id,
+                               d.id AS dispute_id, d.status AS dispute_status
+                        FROM (
+                            SELECT * FROM payments p
+                            WHERE %s%s
+                            ORDER BY p.created_at DESC, p.id DESC
+                            LIMIT :limit
+                        ) p
+                        JOIN users pu ON pu.id = p.payer_user_id
+                        JOIN accounts m ON m.id = p.destination_account_id
+                        LEFT JOIN transactions t
+                               ON t.id = p.transaction_id AND t.created_at = p.transaction_created_at
+                        LEFT JOIN LATERAL (
+                            SELECT id, status FROM disputes
+                            WHERE payment_id = p.id
+                            ORDER BY created_at DESC
+                            LIMIT 1
+                        ) d ON true
+                        ORDER BY p.created_at DESC, p.id DESC
+                        """.formatted(side, keyset))
+                .param("userId", userId)
+                .param("limit", limit);
+        if (cursorTime != null) {
+            spec = spec.param("cts", cursorTime).param("cid", cursorId);
+        }
+        return spec.query((rs, n) -> new PaymentListRow(
+                        map(rs, n),
+                        rs.getString("description"),
+                        rs.getString("payer_name"),
+                        rs.getString("merchant_name"),
+                        rs.getString("merchant_category"),
+                        rs.getObject("merchant_user_id", UUID.class),
+                        rs.getObject("dispute_id", UUID.class),
+                        rs.getString("dispute_status")))
+                .list();
     }
 
     public void applyRefund(UUID id, long refundAmount, String newStatus) {

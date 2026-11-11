@@ -1,7 +1,10 @@
 package com.ledgerflow.common.audit;
 
+import java.util.Map;
 import java.util.UUID;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ledgerflow.common.id.Uuid7;
 import com.ledgerflow.common.web.CorrelationIdFilter;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -17,9 +20,22 @@ import org.springframework.stereotype.Component;
 public class AuditLogger {
 
     private final JdbcClient jdbc;
+    private final ObjectMapper objectMapper;
 
-    public AuditLogger(JdbcClient jdbc) {
+    public AuditLogger(JdbcClient jdbc, ObjectMapper objectMapper) {
         this.jdbc = jdbc;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Records a change whose before/after state contains text a person
+     * typed (names, reasons). The maps are serialized properly, so quotes
+     * in that text cannot break or forge the stored JSON.
+     */
+    public void recordChange(UUID actorUserId, String action, String resourceType, String resourceId,
+                             Map<String, ?> previousState, Map<String, ?> newState, String service, String reason) {
+        record(actorUserId, action, resourceType, resourceId,
+                toJson(previousState), toJson(newState), service, reason);
     }
 
     public void record(UUID actorUserId, String action, String resourceType, String resourceId,
@@ -44,5 +60,16 @@ public class AuditLogger {
                 .param("service", service)
                 .param("reason", reason)
                 .update();
+    }
+
+    private String toJson(Map<String, ?> state) {
+        if (state == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(state);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize audit state", e);
+        }
     }
 }
