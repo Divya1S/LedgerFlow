@@ -36,3 +36,7 @@ load/results/*.json
 # Frontend
 web/node_modules/
 web/dist/
+
+# Personal material, kept local
+docs/portfolio/
+local-notes.md

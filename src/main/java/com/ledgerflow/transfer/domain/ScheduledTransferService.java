@@ -201,10 +201,13 @@ public class ScheduledTransferService {
         String outcome;
         UUID transactionId = null;
         try {
-            transactionId = savepoint.execute(status -> transfers.transfer(
+            TransferService.MovementView sent = savepoint.execute(status -> transfers.transfer(
                     schedule.userId(), schedule.sourceAccountId(), schedule.destinationAccountId(),
-                    schedule.amount(), schedule.currency(), schedule.description(), null).transactionId());
-            outcome = "COMPLETED";
+                    schedule.amount(), schedule.currency(), schedule.description(), null));
+            transactionId = sent.transactionId();
+            // A first payment to someone new may be put on hold like any
+            // other transfer. The run still happened: the money has left.
+            outcome = sent.status();
         } catch (ApiException refused) {
             outcome = refused.code();
         } catch (RuntimeException unexpected) {
@@ -215,7 +218,7 @@ public class ScheduledTransferService {
             schedules.postpone(schedule.id(), OffsetDateTime.now().plusMinutes(5), "ERROR");
             return true;
         }
-        boolean completed = "COMPLETED".equals(outcome);
+        boolean completed = "COMPLETED".equals(outcome) || "HELD".equals(outcome);
 
         String status;
         int nextOccurrence = schedule.nextOccurrence() + 1;

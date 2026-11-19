@@ -7,6 +7,7 @@ package com.ledgerflow.common.db;
  * account never reads differently on two screens:
  *
  *  - the platform cash account is "External bank" (deposits, withdrawals)
+ *  - the platform suspense account is "Held funds" (transfers on hold)
  *  - other platform accounts are "LedgerFlow" (fees)
  *  - a merchant account shows its business name
  *  - your own wallet shows the name you gave it
@@ -28,6 +29,7 @@ public final class PartyLabel {
         return """
                 CASE WHEN %1$s.id IS NULL THEN NULL
                      WHEN %1$s.type = 'SYSTEM_CASH' THEN 'External bank'
+                     WHEN %1$s.type = 'SYSTEM_SUSPENSE' THEN 'Held funds'
                      WHEN %1$s.type LIKE 'SYSTEM%%' THEN 'LedgerFlow'
                      WHEN %1$s.type = 'MERCHANT' THEN %1$s.name
                      WHEN %1$s.user_id = :%3$s THEN %1$s.name

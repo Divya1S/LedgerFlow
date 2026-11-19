@@ -128,6 +128,20 @@ public class AccountRepository {
                 .optional();
     }
 
+    /** True while a held transfer still has to leave from, or arrive in, this account. */
+    public boolean hasOpenHolds(UUID accountId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM transfer_holds
+                            WHERE status = 'HELD'
+                              AND (source_account_id = :id OR destination_account_id = :id)
+                        )
+                        """)
+                .param("id", accountId)
+                .query(Boolean.class)
+                .single();
+    }
+
     public int updateStatus(UUID id, String status) {
         return jdbc.sql("UPDATE accounts SET status = :status WHERE id = :id")
                 .param("id", id)

@@ -11,6 +11,7 @@ import AccountDetailView from './views/AccountDetailView';
 import TransactionsView from './views/TransactionsView';
 import MoveMoneyView from './views/MoveMoneyView';
 import ScheduledView from './views/ScheduledView';
+import HeldView from './views/HeldView';
 import RequestsView, { PayRequestView } from './views/RequestsView';
 import RecipientsView from './views/RecipientsView';
 import PaymentsView from './views/PaymentsView';
@@ -44,6 +45,7 @@ const NAV: { heading?: string; links: NavLink[] }[] = [
   ] },
   { heading: 'Move money', links: [
     { path: 'send', label: 'Send and add money', icon: 'send' },
+    { path: 'held', label: 'Held transfers', icon: 'shield' },
     { path: 'scheduled', label: 'Scheduled', icon: 'calendar' },
     { path: 'requests', label: 'Requests', icon: 'receive' },
     { path: 'recipients', label: 'Recipients', icon: 'users' },
@@ -170,6 +172,8 @@ function Screen({ route, session, onNameChange, onSignOut }: {
       return <TransactionsView query={route.query} />;
     case 'send':
       return <MoveMoneyView key={route.query.toString()} query={route.query} />;
+    case 'held':
+      return <HeldView />;
     case 'scheduled':
       return <ScheduledView />;
     case 'requests':

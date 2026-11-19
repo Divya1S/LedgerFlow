@@ -94,6 +94,22 @@ public class PaymentRequestRepository {
                 .update();
     }
 
+    /**
+     * Undoes markPaid for the request (if any) that was paid by this
+     * transaction. Used when the paying transfer was on hold and the money
+     * went back to the payer, so the request can be paid again.
+     */
+    public int reopenPaidBy(UUID transactionId) {
+        return jdbc.sql("""
+                        UPDATE payment_requests
+                        SET status = 'PENDING', payer_user_id = NULL, transaction_id = NULL,
+                            transaction_created_at = NULL, paid_at = NULL
+                        WHERE transaction_id = :transactionId AND status = 'PAID'
+                        """)
+                .param("transactionId", transactionId)
+                .update();
+    }
+
     public void markCancelled(UUID id) {
         jdbc.sql("UPDATE payment_requests SET status = 'CANCELLED' WHERE id = :id")
                 .param("id", id)

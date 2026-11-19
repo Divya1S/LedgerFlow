@@ -30,7 +30,13 @@ public class InsightsRepository {
         this.jdbc = jdbc;
     }
 
-    public record DailyFlow(LocalDate day, long moneyIn, long moneyOut) {
+    /**
+     * net is the real change in balance that day. It can differ from
+     * moneyIn - moneyOut when a held transfer was cancelled: that money
+     * left and came back, which moved the balance but was never spending
+     * or income.
+     */
+    public record DailyFlow(LocalDate day, long moneyIn, long moneyOut, long net) {
     }
 
     public record SpendingSlice(String category, long amount, long transactions) {
@@ -40,20 +46,31 @@ public class InsightsRepository {
             NOT (COALESCE(t.source_account_id = ANY(:own), false)
                  AND COALESCE(t.destination_account_id = ANY(:own), false))""";
 
+    // A held transfer that was cancelled or sent back: the debit when it
+    // was sent, and the credit when the money returned. Neither is
+    // spending or income, so both are kept out of "money in" and "money
+    // out" (but not out of the balance, which really did move).
+    private static final String UNDONE = """
+            (t.type = 'HOLD_RETURN'
+             OR (t.type = 'HOLD' AND EXISTS (
+                     SELECT 1 FROM transfer_holds h
+                     WHERE h.hold_transaction_id = t.id AND h.status IN ('CANCELLED', 'RETURNED'))))""";
+
     /** Money in and out per calendar day, in the viewer's time zone. */
     public List<DailyFlow> dailyFlows(UUID[] ownAccountIds, OffsetDateTime from, OffsetDateTime to, String zone) {
         return jdbc.sql("""
                         SELECT (e.created_at AT TIME ZONE :zone)::date AS day,
-                               COALESCE(sum(e.amount) FILTER (WHERE e.amount > 0), 0) AS money_in,
-                               COALESCE(-sum(e.amount) FILTER (WHERE e.amount < 0), 0) AS money_out
+                               COALESCE(sum(e.amount) FILTER (WHERE e.amount > 0 AND NOT %2$s), 0) AS money_in,
+                               COALESCE(-sum(e.amount) FILTER (WHERE e.amount < 0 AND NOT %2$s), 0) AS money_out,
+                               COALESCE(sum(e.amount), 0) AS net
                         FROM ledger_entries e
                         JOIN transactions t ON t.id = e.transaction_id AND t.created_at = e.created_at
                         WHERE e.account_id = ANY(:own)
                           AND e.created_at >= :from AND e.created_at < :to
-                          AND %s
+                          AND %1$s
                         GROUP BY 1
                         ORDER BY 1
-                        """.formatted(NOT_INTERNAL))
+                        """.formatted(NOT_INTERNAL, UNDONE))
                 .param("own", ownAccountIds)
                 .param("from", from)
                 .param("to", to)
@@ -61,7 +78,8 @@ public class InsightsRepository {
                 .query((rs, n) -> new DailyFlow(
                         rs.getObject("day", LocalDate.class),
                         rs.getLong("money_in"),
-                        rs.getLong("money_out")))
+                        rs.getLong("money_out"),
+                        rs.getLong("net")))
                 .list();
     }
 
@@ -74,6 +92,7 @@ public class InsightsRepository {
                         SELECT CASE t.type
                                    WHEN 'PAYMENT' THEN COALESCE(d.category, 'OTHER')
                                    WHEN 'TRANSFER' THEN 'TRANSFERS'
+                                   WHEN 'HOLD' THEN 'TRANSFERS'
                                    WHEN 'WITHDRAWAL' THEN 'WITHDRAWALS'
                                    WHEN 'REFUND' THEN 'REFUNDS'
                                    ELSE 'OTHER'
@@ -87,9 +106,10 @@ public class InsightsRepository {
                           AND e.amount < 0
                           AND e.created_at >= :from AND e.created_at < :to
                           AND %s
+                          AND NOT %s
                         GROUP BY 1
                         ORDER BY amount DESC, category
-                        """.formatted(NOT_INTERNAL))
+                        """.formatted(NOT_INTERNAL, UNDONE))
                 .param("own", ownAccountIds)
                 .param("from", from)
                 .param("to", to)

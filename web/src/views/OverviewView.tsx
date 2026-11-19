@@ -17,6 +17,9 @@ export default function OverviewView({ session }: { session: Session }) {
   const [openTransaction, setOpenTransaction] = useState<string | null>(null);
 
   const overview = useLoad(() => api.overview(Number(range)), [range]);
+  const held = useLoad(() => api.heldTransfers(), []);
+  const heldOut = (held.data?.outgoing ?? []).filter((h) => h.status === 'HELD');
+  const heldIn = held.data?.incoming ?? [];
   const recent = useLoad(() => api.transactions({}, null, 6), []);
 
   const data = overview.data;
@@ -46,6 +49,23 @@ export default function OverviewView({ session }: { session: Session }) {
           ]} />
         }
       />
+
+      {(heldOut.length > 0 || heldIn.length > 0) && (
+        <Notice tone="warn">
+          {heldOut.length > 0 && (
+            <>
+              <strong>{formatMoney(held.data?.heldOutMinorUnits ?? 0)} you sent is on hold</strong>{' '}
+              ({heldOut.length === 1 ? `to ${heldOut[0].counterparty}` : `${heldOut.length} transfers`}) and can still be cancelled.{' '}
+            </>
+          )}
+          {heldIn.length > 0 && (
+            <>
+              <strong>{formatMoney(heldIn.reduce((sum, h) => sum + h.amountMinorUnits, 0))} is on its way to you.</strong>{' '}
+            </>
+          )}
+          <a href="#/held">View held transfers</a>
+        </Notice>
+      )}
 
       <div className={`kpis ${overview.loading && data ? 'is-refreshing' : ''}`}>
         {data ? <Kpis data={data} range={range} /> : (
@@ -148,8 +168,10 @@ function RecentRow({ transaction, onOpen }: { transaction: TransactionItem; onOp
 }
 
 function Kpis({ data, range }: { data: Overview; range: Range }) {
-  const startBalance = data.totalBalanceMinorUnits - data.current.netMinorUnits;
-  const change = data.current.netMinorUnits;
+  // How much the balance really moved. Usually the same as money in minus
+  // money out; a cancelled hold moves the balance without being either.
+  const change = data.balanceChangeMinorUnits;
+  const startBalance = data.totalBalanceMinorUnits - change;
   return (
     <>
       <div className="card kpi hero">

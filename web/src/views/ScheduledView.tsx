@@ -12,6 +12,7 @@ const OUTCOME: Record<string, string> = {
   ACCOUNT_FROZEN: 'Skipped: the account was frozen',
   ACCOUNT_NOT_ACTIVE: 'Skipped: an account was closed',
   ERROR: 'Delayed: it will be tried again shortly',
+  HELD: 'Sent, and on hold as a first payment to someone new',
 };
 
 export default function ScheduledView() {

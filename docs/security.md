@@ -54,6 +54,19 @@
 - The activity feed returns only rows the caller acted in, and only the
   action, time and reference. Before and after state stays internal.
 
+## Protecting the person sending
+
+- A first payment of $200 or more to someone the sender has never
+  settled money with is held, and can be cancelled until it is delivered
+  (ADR-010). The sender cannot skip the hold: the point is to outlast
+  the phone call a scammer keeps them on.
+- The hold applies inside the one transfer path, so scheduled transfers
+  and money request links cannot be used to go around it.
+- The reasons for a hold are shown to the sender only. The recipient
+  sees that money is coming and when.
+- A saved recipient is not a trusted one. Only a payment that actually
+  arrived makes later payments instant.
+
 ## Protecting an account
 
 - Changing a password needs the current one, so a borrowed, still

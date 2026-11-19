@@ -97,6 +97,8 @@ public class ActivityController {
             case "DEPOSIT_COMPLETED" -> "Added money";
             case "WITHDRAWAL_COMPLETED" -> "Withdrew money";
             case "TRANSFER_COMPLETED" -> "Sent a transfer";
+            case "TRANSFER_HELD" -> "Sent a transfer that was put on hold";
+            case "TRANSFER_HOLD_CANCELLED" -> "Cancelled a transfer on hold";
             case "PAYMENT_COMPLETED" -> "Paid a merchant";
             case "REFUND_COMPLETED" -> "Refunded a payment";
             case "RECIPIENT_ADDED" -> "Saved a recipient";

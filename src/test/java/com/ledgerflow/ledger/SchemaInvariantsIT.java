@@ -26,7 +26,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 class SchemaInvariantsIT {
 
     private static final String SYSTEM_CASH = "00000000-0000-7000-8000-000000000001";
-    private static final String SYSTEM_SUSPENSE = "00000000-0000-7000-8000-000000000003";
+    // Raw entries in these tests bypass balances on purpose. They post to
+    // the fees account, not suspense: suspense holds real money on hold and
+    // its balance is checked against open holds by TransferHoldIT.
+    private static final String SYSTEM_FEES = "00000000-0000-7000-8000-000000000002";
 
     @Autowired
     JdbcClient jdbc;
@@ -57,7 +60,7 @@ class SchemaInvariantsIT {
         txTemplate.executeWithoutResult(status -> {
             OffsetDateTime createdAt = insertTransaction(txnId, 250);
             insertEntry(txnId, createdAt, SYSTEM_CASH, -250);
-            insertEntry(txnId, createdAt, SYSTEM_SUSPENSE, 250);
+            insertEntry(txnId, createdAt, SYSTEM_FEES, 250);
         });
 
         Long sum = jdbc.sql("SELECT COALESCE(sum(amount), -1) FROM ledger_entries WHERE transaction_id = :id")
@@ -71,7 +74,7 @@ class SchemaInvariantsIT {
         txTemplate.executeWithoutResult(status -> {
             OffsetDateTime createdAt = insertTransaction(txnId, 10);
             insertEntry(txnId, createdAt, SYSTEM_CASH, -10);
-            insertEntry(txnId, createdAt, SYSTEM_SUSPENSE, 10);
+            insertEntry(txnId, createdAt, SYSTEM_FEES, 10);
         });
 
         assertThatThrownBy(() ->
@@ -88,12 +91,32 @@ class SchemaInvariantsIT {
     }
 
     @Test
+    void platformHasOneAccountOfEachKindPerCurrency() {
+        // A second USD suspense account would split held money in two and
+        // leave the lookup by (type, currency) ambiguous.
+        assertThatThrownBy(() ->
+                jdbc.sql("""
+                        INSERT INTO accounts (id, user_id, type, currency, status, name)
+                        VALUES (:id, NULL, 'SYSTEM_SUSPENSE', 'USD', 'ACTIVE', 'impostor')
+                        """).param("id", UUID.randomUUID()).update())
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("ux_accounts_one_system_account_per_currency");
+    }
+
+    @Test
     void balanceCannotDropBelowFloor() {
         UUID accountId = UUID.randomUUID();
+        // A throwaway platform account in a currency nothing else uses, so
+        // it cannot collide with the real USD ones. Each run needs its own.
+        String currency = jdbc.sql("""
+                        SELECT c FROM (VALUES ('XTS'), ('XXA'), ('XXB'), ('XXC'), ('XXD')) AS v(c)
+                        WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE type = 'SYSTEM_SUSPENSE' AND currency = c)
+                        LIMIT 1
+                        """).query(String.class).single();
         jdbc.sql("""
                 INSERT INTO accounts (id, user_id, type, currency, status, name)
-                VALUES (:id, NULL, 'SYSTEM_SUSPENSE', 'USD', 'ACTIVE', 'floor test')
-                """).param("id", accountId).update();
+                VALUES (:id, NULL, 'SYSTEM_SUSPENSE', :currency, 'ACTIVE', 'floor test')
+                """).param("id", accountId).param("currency", currency).update();
         jdbc.sql("INSERT INTO account_balances (account_id, balance, min_balance) VALUES (:id, 50, 0)")
                 .param("id", accountId).update();
 

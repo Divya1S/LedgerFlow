@@ -34,6 +34,8 @@ went. Behind every number on the screen is a record you can open and check.
 - See money in, money out and spending by category for the last 7, 30 or 90 days.
 - Search and filter every transaction.
 - Download a statement as a spreadsheet.
+- Cancel a payment you are not sure about. A first, larger payment to someone
+  new is held for an hour before it is delivered, and you can take it back.
 - Freeze a wallet in one click. Money can still arrive, nothing can leave.
 - Get notified when you are paid, refunded or need to act.
 - Review a full history of sign-ins and changes on your profile.
@@ -55,6 +57,29 @@ and none failed.
 **It holds up under pressure.** When 1,000 transfers were fired at one
 account at the same moment, exactly the ones the balance could afford went
 through, and the books were still exact afterwards.
+
+## Built from a real complaint
+
+The most common complaint about payment apps is not a missing feature. It
+is that money sent to a scammer, or to the wrong person, cannot be taken
+back. In 2024 it was the top issue in complaints to the US consumer
+finance regulator about these apps (37%).
+
+LedgerFlow's answer is a short hold. When you send $200 or more to someone
+you have never paid before:
+
+- you are told, before you confirm, that it will be held and when it arrives
+- the money waits safely for an hour, or a day if the other account looks risky
+- you can cancel at any point and get all of it back
+- it is delivered on time by itself, with nobody to chase
+
+After one payment has arrived, later ones to that person are instant.
+Small payments and people you already pay are never held.
+
+![A transfer about to be held, with the reasons and a scam checklist](docs/media/held-transfer-warning.png)
+
+The reasoning, the evidence and what this does not solve are written up in
+[one design decision](docs/decisions/ADR-010-held-transfers.md).
 
 ## A look around
 

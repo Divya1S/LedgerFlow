@@ -77,12 +77,13 @@ public class TransactionQueryController {
     public record TransactionResponse(
             UUID id, String type, String status, long amountMinorUnits, String currency,
             UUID sourceAccountId, UUID destinationAccountId, String description, OffsetDateTime createdAt,
-            String direction, String counterparty, String sourceLabel, String destinationLabel) {
+            String direction, String counterparty, String sourceLabel, String destinationLabel,
+            HoldResponse hold) {
 
         static TransactionResponse from(TransactionView t) {
             return new TransactionResponse(t.id(), t.type(), t.status(), t.amount(), t.currency(),
                     t.sourceAccountId(), t.destinationAccountId(), t.description(), t.createdAt(),
-                    null, null, null, null);
+                    null, null, null, null, null);
         }
 
         static TransactionResponse from(TransactionDetail d) {
@@ -92,8 +93,14 @@ public class TransactionQueryController {
             String counterparty = "IN".equals(direction) ? d.sourceLabel() : d.destinationLabel();
             return new TransactionResponse(t.id(), t.type(), t.status(), t.amount(), t.currency(),
                     t.sourceAccountId(), t.destinationAccountId(), t.description(), t.createdAt(),
-                    direction, counterparty, d.sourceLabel(), d.destinationLabel());
+                    direction, counterparty, d.sourceLabel(), d.destinationLabel(),
+                    d.hold() == null ? null
+                            : new HoldResponse(d.hold().holdId(), d.hold().status(), d.hold().releaseAt()));
         }
+    }
+
+    /** Set on a transfer that was put on hold: where it stands and when it arrives. */
+    public record HoldResponse(UUID holdId, String status, OffsetDateTime releaseAt) {
     }
 
     public record PageResponse<T>(List<T> items, String nextCursor) {

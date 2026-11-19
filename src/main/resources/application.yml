@@ -83,6 +83,18 @@ ledgerflow:
   fraud:
     large-amount: 100000      # $1,000.00 in minor units
     very-large-amount: 500000 # $5,000.00
+  protection:
+    # Held transfers (ADR-010). A first payment to someone the sender has
+    # never settled money with, at or above the threshold, waits on hold
+    # and can be cancelled. Smaller and repeat payments are instant and
+    # never touch this code path.
+    enabled: ${PROTECTION_ENABLED:true}
+    threshold-minor-units: ${PROTECTION_THRESHOLD:20000}   # $200.00
+    elevated-hold-minutes: ${PROTECTION_HOLD_MINUTES:60}   # first payment only
+    high-hold-minutes: ${PROTECTION_HIGH_HOLD_MINUTES:1440} # plus evidence about the recipient
+    new-account-days: 7
+    strangers-for-high-risk: 2
+    release-poll-ms: ${PROTECTION_RELEASE_POLL_MS:15000}
   scheduled-transfers:
     # How often the runner looks for transfers that are due. A schedule
     # runs at most this long after its time; exactly-once does not depend

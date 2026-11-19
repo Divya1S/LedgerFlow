@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Account, api, errorMessage, Payee, Recipient, StatementLine, TransactionEntries, TransactionItem,
 } from './api';
-import { accountTypeLabel, formatDateTime, formatMoney, formatSigned, titleCase } from './format';
+import { accountTypeLabel, arrivalText, formatDateTime, formatMoney, formatSigned, typeLabel } from './format';
 import { Icon, IconName } from './icons';
 import { Amount, Button, CopyId, Drawer, Field, Notice, StatusBadge } from './ui';
 
@@ -38,6 +38,16 @@ export function describe(t: TransactionItem): TransactionWords {
       return { icon: 'store', title: other, kind: t.direction === 'IN' ? 'Payment received' : 'Payment', signedAmount };
     case 'REFUND':
       return { icon: 'receive', title: other, kind: t.direction === 'IN' ? 'Refund' : 'Refund given', signedAmount };
+    case 'HOLD': {
+      // A transfer that waited on hold. What it is called depends on where it stands now.
+      const kind = t.hold?.status === 'HELD' ? 'Transfer on hold'
+        : t.hold?.status === 'CANCELLED' ? 'Transfer cancelled'
+        : t.hold?.status === 'RETURNED' ? 'Transfer could not be delivered'
+        : 'Transfer sent';
+      return { icon: 'send', title: other, kind, signedAmount };
+    }
+    case 'HOLD_RETURN':
+      return { icon: 'receive', title: 'Money returned', kind: 'From a transfer that did not go through', signedAmount };
     default:
       return {
         icon: t.direction === 'IN' ? 'receive' : 'send', title: other,
@@ -71,9 +81,11 @@ export function StatementParty({ line }: { line: StatementLine }) {
     <div className="party">
       <span className={`txn-icon ${incoming ? 'in' : ''}`}><Icon name={icon} size={15} /></span>
       <div>
-        <div className="primary truncate">{line.counterparty ?? titleCase(line.type)}</div>
+        <div className="primary truncate">
+          {line.type === 'HOLD_RETURN' ? 'Money returned' : line.counterparty ?? typeLabel(line.type)}
+        </div>
         <div className="secondary truncate">
-          {titleCase(line.type)}{line.description ? ` · ${line.description}` : ''}
+          {typeLabel(line.type)}{line.description ? ` · ${line.description}` : ''}
         </div>
       </div>
     </div>
@@ -115,9 +127,17 @@ export function TransactionDrawer({ transactionId, onClose }: { transactionId: s
             </div>
             <div className="row" style={{ marginTop: 6 }}>
               <StatusBadge status={t.status} />
-              <span className="muted">{titleCase(t.type)}</span>
+              <span className="muted">{typeLabel(t.type)}</span>
             </div>
           </div>
+
+          {t.type.startsWith('HOLD') && (
+            <Notice tone="info">
+              {t.type === 'HOLD' && 'This was a first payment to someone new, so it waited on hold before delivery. While on hold the money sits in a LedgerFlow holding account, shown below.'}
+              {t.type === 'HOLD_RELEASE' && `This transfer waited on hold as a safety check before it reached you${t.createdAt ? `, and arrived ${arrivalText(t.createdAt)}` : ''}.`}
+              {t.type === 'HOLD_RETURN' && 'A transfer on hold was cancelled or could not be delivered, so the money came back from the holding account.'}
+            </Notice>
+          )}
 
           <dl className="facts">
             <dt>Date</dt><dd>{formatDateTime(t.createdAt)}</dd>
@@ -142,6 +162,7 @@ export function TransactionDrawer({ transactionId, onClose }: { transactionId: s
                         </div>
                         <div className="secondary">
                           {entry.own ? 'Your account'
+                            : entry.accountType === 'SYSTEM_SUSPENSE' ? 'LedgerFlow holding account'
                             : entry.accountType === 'SYSTEM_FEES' ? 'Kept by LedgerFlow'
                             : entry.accountType === 'SYSTEM_CASH' ? 'Outside LedgerFlow'
                             : 'Other party'}

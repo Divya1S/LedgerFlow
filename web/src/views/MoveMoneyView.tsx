@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Account, api, errorMessage, newIdempotencyKey, Recipient } from '../api';
+import { Account, api, errorMessage, HoldReason, newIdempotencyKey, ProtectionCheck, Recipient } from '../api';
 import { AccountSelect, PayeeChoice, PayeePicker, TransactionDrawer } from '../components';
-import { formatDate, formatMoney, parseAmount, todayIso } from '../format';
+import { arrivalText, durationText, formatDate, formatMoney, parseAmount, reasonText, todayIso } from '../format';
 import { navigate, useLoad } from '../hooks';
 import { Icon } from '../icons';
 import { AmountField, Button, Card, CopyId, EmptyState, Field, LoadingRows, Notice, PageHeader, Tabs, useToast } from '../ui';
@@ -56,13 +56,26 @@ export default function MoveMoneyView({ query }: { query: URLSearchParams }) {
 // --- send --------------------------------------------------------------
 
 interface SendDone {
-  kind: 'sent' | 'scheduled';
+  /** held: sent, but waiting on hold as a first payment to someone new. */
+  kind: 'sent' | 'scheduled' | 'held';
   amount: number;
   to: PayeeChoice;
   transactionId?: string;
   startDate?: string;
   when: When;
   key: string;
+  hold?: { holdId: string; releaseAt: string; reasons: HoldReason[] };
+}
+
+/** The warning signs of a scam, shown at the one moment they can still help. */
+function ScamChecklist() {
+  return (
+    <ul className="points" style={{ gap: 6, marginTop: 8 }}>
+      <li><span>Did someone contact you first and ask you to send this?</span></li>
+      <li><span>Are you being rushed, or told to keep it secret?</span></li>
+      <li><span>Were you told to move money to a "safe account", or to pay a fee to receive something?</span></li>
+    </ul>
+  );
 }
 
 function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
@@ -89,6 +102,10 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
   const [replayNote, setReplayNote] = useState<string | null>(null);
   const [openTransaction, setOpenTransaction] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [protection, setProtection] = useState<ProtectionCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
+  const [cancelKey] = useState(newIdempotencyKey);
 
   // Arriving from a recipient's "Send" button preselects them.
   useEffect(() => {
@@ -111,15 +128,45 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
     return null;
   }, [touched, amount, when, source]);
 
-  function review(event: FormEvent) {
+  async function review(event: FormEvent) {
     event.preventDefault();
     setTouched(true);
     setError(null);
     if (!to) { setError('Choose who to send to.'); return; }
     if (amount === null) return;
     if (when === 'NOW' && source && amount > source.balanceMinorUnits) return;
+    // Ask before the person commits whether this transfer will wait on
+    // hold. A delay they were told about is a promise; one they discover
+    // afterwards is a complaint. If the check itself fails, carry on: the
+    // server applies the same rule when the transfer is sent.
+    setProtection(null);
+    if (when === 'NOW') {
+      setChecking(true);
+      try {
+        setProtection(await api.protectionCheck(to.accountId, amount));
+      } catch {
+        setProtection(null);
+      } finally {
+        setChecking(false);
+      }
+    }
     setKey(newIdempotencyKey());
     setStep('review');
+  }
+
+  async function cancelHeld() {
+    if (!done?.hold) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.cancelHeldTransfer(done.hold.holdId, cancelKey);
+      setCancelled(true);
+      onMoved();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function confirm() {
@@ -129,7 +176,10 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
     try {
       if (when === 'NOW') {
         const { data } = await api.transfer(from, to.accountId, amount, description.trim(), key);
-        setDone({ kind: 'sent', amount, to, transactionId: data.transactionId, when, key });
+        setDone(data.status === 'HELD' && data.hold
+          ? { kind: 'held', amount, to, transactionId: data.transactionId, when, key,
+              hold: { holdId: data.hold.holdId, releaseAt: data.hold.releaseAt, reasons: data.hold.reasons } }
+          : { kind: 'sent', amount, to, transactionId: data.transactionId, when, key });
       } else {
         await api.createSchedule({
           sourceAccountId: from, destinationAccountId: to.accountId, amountMinorUnits: amount,
@@ -180,6 +230,8 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
     setReplayNote(null);
     setSaved(false);
     setError(null);
+    setProtection(null);
+    setCancelled(false);
   }
 
   if (sendable.length === 0) {
@@ -190,6 +242,53 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
           Unfreeze an account to send money from it.
         </EmptyState>
       </Card>
+    );
+  }
+
+  if (step === 'done' && done && done.kind === 'held' && done.hold) {
+    return (
+      <div className="cols-form">
+        <Card>
+          <div className="receipt">
+            <div className="tick" style={cancelled ? undefined : { background: 'var(--warn-tint)', color: 'var(--warn)' }}>
+              <Icon name={cancelled ? 'check' : 'lock'} size={22} />
+            </div>
+            <div className="big">{formatMoney(done.amount)}</div>
+            <p className="muted" style={{ marginTop: 4 }}>
+              {cancelled
+                ? `Cancelled. The money is back in ${source?.name ?? 'your account'}.`
+                : `On hold. It reaches ${done.to.name} ${arrivalText(done.hold.releaseAt)}.`}
+            </p>
+          </div>
+          <div className="stack" style={{ marginTop: 20 }}>
+            {!cancelled && (
+              <Notice tone="warn">
+                <strong>You can still cancel this.</strong> The money has left {source?.name} and is being
+                held safely by LedgerFlow. Nobody needs to approve it: it is delivered automatically at the
+                time above unless you cancel first.
+              </Notice>
+            )}
+            {error && <Notice tone="error">{error}</Notice>}
+            <div className="row">
+              {!cancelled && <Button variant="danger" busy={busy} onClick={cancelHeld}>Cancel transfer</Button>}
+              <Button variant={cancelled ? 'primary' : 'default'} onClick={reset}>Send another</Button>
+              <Button variant="ghost" onClick={() => navigate('/held')}>View held transfers</Button>
+            </div>
+          </div>
+        </Card>
+        <aside>
+          <Card title="Why it is on hold">
+            <ul className="points">
+              {done.hold.reasons.map((reason) => <li key={reason}><span>{reasonText(reason)}</span></li>)}
+            </ul>
+            <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
+              A payment sent in a hurry to someone new is the kind that cannot be taken back once it
+              arrives. The hold gives you time to be sure. Your next payment to {done.to.name} will be
+              instant.
+            </p>
+          </Card>
+        </aside>
+      </div>
     );
   }
 
@@ -259,11 +358,27 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
                 day, that transfer is skipped and you are told.
               </Notice>
             )}
+            {protection?.held && protection.releaseAt && (
+              <Notice tone="warn">
+                <strong>
+                  This will be held for {durationText(protection.holdMinutes)} and arrive{' '}
+                  {arrivalText(protection.releaseAt)}.
+                </strong>{' '}
+                You can cancel it any time before then.
+                <ul className="points" style={{ gap: 4, marginTop: 8 }}>
+                  {protection.reasons.map((reason) => <li key={reason}><span>{reasonText(reason)}</span></li>)}
+                </ul>
+                <div style={{ marginTop: 10, fontWeight: 600 }}>Before you send, stop if any of these is true:</div>
+                <ScamChecklist />
+              </Notice>
+            )}
             {error && <Notice tone="error">{error}</Notice>}
             <div className="row">
               <Button onClick={() => { setStep('form'); setError(null); }} disabled={busy}>Back</Button>
               <Button variant="primary" busy={busy} onClick={confirm}>
-                {when === 'NOW' ? `Send ${formatMoney(amount)}` : 'Schedule transfer'}
+                {when !== 'NOW' ? 'Schedule transfer'
+                  : protection?.held ? `Send ${formatMoney(amount)} on hold`
+                  : `Send ${formatMoney(amount)}`}
               </Button>
             </div>
           </div>
@@ -298,7 +413,7 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
             </Field>
           )}
           {error && <Notice tone="error">{error}</Notice>}
-          <Button type="submit" variant="primary" size="large">Review</Button>
+          <Button type="submit" variant="primary" size="large" busy={checking}>Review</Button>
         </form>
       </Card>
       <aside className="stack">
@@ -306,6 +421,7 @@ function SendForm({ accounts, recipients, presetFrom, presetTo, onMoved }: {
           <ul className="points">
             <li><span><b>Free and instant.</b> Transfers between LedgerFlow accounts arrive straight away.</span></li>
             <li><span><b>Check the name.</b> New recipients are shown by name before you send.</span></li>
+            <li><span><b>First larger payment to someone new?</b> It waits on hold for an hour and you can cancel it. After one payment has arrived, the rest are instant.</span></li>
             <li><span><b>Paying a business?</b> Use <a href="#/payments">Payments</a> so you can ask for a refund or open a dispute.</span></li>
           </ul>
         </Card>

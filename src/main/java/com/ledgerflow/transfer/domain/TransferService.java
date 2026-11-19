@@ -30,19 +30,33 @@ public class TransferService {
     private final SystemAccounts systemAccounts;
     private final OutboxWriter outbox;
     private final AuditLogger audit;
+    private final TransferProtection protection;
+    private final TransferHoldService holds;
 
     public TransferService(MoneyMovementService movements, AccountService accountService,
-                           SystemAccounts systemAccounts, OutboxWriter outbox, AuditLogger audit) {
+                           SystemAccounts systemAccounts, OutboxWriter outbox, AuditLogger audit,
+                           TransferProtection protection, TransferHoldService holds) {
         this.movements = movements;
         this.accountService = accountService;
         this.systemAccounts = systemAccounts;
         this.outbox = outbox;
         this.audit = audit;
+        this.protection = protection;
+        this.holds = holds;
     }
 
+    /**
+     * status is COMPLETED when the money has arrived and HELD when it is
+     * waiting on hold; hold is filled in only for the second case.
+     */
     public record MovementView(UUID transactionId, String type, String status, long amountMinorUnits,
                                String currency, UUID sourceAccountId, UUID destinationAccountId,
-                               OffsetDateTime createdAt) {
+                               OffsetDateTime createdAt, HoldInfo hold) {
+    }
+
+    /** Why a transfer is waiting, and until when. */
+    public record HoldInfo(UUID holdId, String riskLevel, java.util.List<String> reasons,
+                           OffsetDateTime releaseAt) {
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -54,6 +68,21 @@ public class TransferService {
         // Source must be the caller's own wallet. Destination only has to
         // exist and be active; the movement service verifies that under lock.
         accountService.requireOwnedAccount(sourceAccountId, userId, false);
+
+        // Every wallet-to-wallet transfer comes through here (sent by hand,
+        // scheduled, or paying a money request), so this one check covers
+        // them all. A first, larger payment to someone new waits on hold
+        // and can be cancelled; everything else is instant as before.
+        TransferProtection.Assessment assessment =
+                protection.assess(userId, destinationAccountId, amount, currency);
+        if (assessment.held()) {
+            TransferHoldService.Placed placed = holds.place(userId, sourceAccountId, destinationAccountId,
+                    amount, currency, description, idemKeyId, assessment);
+            return new MovementView(placed.transactionId(), "TRANSFER", "HELD", amount, currency,
+                    sourceAccountId, destinationAccountId, placed.createdAt(),
+                    new HoldInfo(placed.holdId(), assessment.riskLevel(), assessment.reasons(),
+                            placed.releaseAt()));
+        }
 
         MovementResult result = movements.post("TRANSFER", amount, currency,
                 sourceAccountId, destinationAccountId, description, idemKeyId,
@@ -107,7 +136,7 @@ public class TransferService {
     private MovementView view(MovementResult result, String type, long amount, String currency,
                               UUID source, UUID destination) {
         return new MovementView(result.transactionId(), type, "COMPLETED", amount, currency,
-                source, destination, result.createdAt());
+                source, destination, result.createdAt(), null);
     }
 
     private String eventJson(UUID transactionId, String type, long amount, String currency,

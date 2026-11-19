@@ -94,7 +94,7 @@ public class NotificationConsumer {
         if (eventId == null || eventType == null) {
             throw new IllegalArgumentException("ledger event without eventId/eventType headers");
         }
-        if (!"TransferCompleted".equals(eventType) && !"ScheduledTransferFailed".equals(eventType)) {
+        if (!LEDGER_EVENTS_WITH_NEWS.contains(eventType)) {
             return;
         }
         if (!processedEvents.markProcessed(GROUP, eventId)) {
@@ -102,10 +102,56 @@ public class NotificationConsumer {
         }
 
         JsonNode payload = objectMapper.readTree(record.value());
-        if ("TransferCompleted".equals(eventType)) {
-            onTransferCompleted(payload, record.value());
-        } else {
-            onScheduledTransferFailed(payload, record.value());
+        switch (eventType) {
+            case "TransferCompleted" -> onTransferCompleted(payload, record.value());
+            case "ScheduledTransferFailed" -> onScheduledTransferFailed(payload, record.value());
+            default -> onHoldEvent(eventType, payload, record.value());
+        }
+    }
+
+    private static final java.util.Set<String> LEDGER_EVENTS_WITH_NEWS = java.util.Set.of(
+            "TransferCompleted", "ScheduledTransferFailed",
+            "TransferHeld", "TransferHoldReleased", "TransferHoldCancelled", "TransferHoldReturned");
+
+    private static final java.time.format.DateTimeFormatter ARRIVAL =
+            java.time.format.DateTimeFormatter.ofPattern("MMM d 'at' HH:mm 'UTC'");
+
+    /**
+     * A transfer on hold tells both people where the money is at each
+     * step. The recipient hears that it is coming and when, and never why
+     * it was held: the reasons may be about them.
+     */
+    private void onHoldEvent(String eventType, JsonNode payload, String raw) {
+        UUID senderId = uuid(payload, "senderUserId");
+        UUID recipientId = uuid(payload, "recipientUserId");
+        if (senderId == null || recipientId == null) {
+            return;
+        }
+        String amount = amountOr(payload, "money");
+        String sender = userName(senderId);
+        Party destination = party(uuid(payload, "destinationAccountId"));
+        String recipient = destination == null ? userName(recipientId) : destination.label();
+        switch (eventType) {
+            case "TransferHeld" -> {
+                String when = payload.hasNonNull("releaseAt")
+                        ? ARRIVAL.format(java.time.OffsetDateTime.parse(payload.get("releaseAt").asText())
+                                .atZoneSameInstant(java.time.ZoneOffset.UTC))
+                        : "soon";
+                insert(recipientId, "TRANSFER_ON_ITS_WAY", "Money on its way",
+                        "%s sent you %s. It arrives %s.".formatted(sender, amount, when), raw);
+            }
+            case "TransferHoldReleased" -> {
+                insert(recipientId, "MONEY_RECEIVED", "Money received",
+                        "%s sent you %s.".formatted(sender, amount), raw);
+                insert(senderId, "TRANSFER_DELIVERED", "Transfer delivered",
+                        "Your %s transfer to %s has arrived.".formatted(amount, recipient), raw);
+            }
+            case "TransferHoldCancelled" -> insert(recipientId, "TRANSFER_CANCELLED", "Transfer cancelled",
+                    "%s cancelled the %s transfer before it arrived.".formatted(sender, amount), raw);
+            case "TransferHoldReturned" -> insert(senderId, "TRANSFER_RETURNED", "Transfer returned to you",
+                    "Your %s transfer to %s could not be delivered, so the money is back in your account."
+                            .formatted(amount, recipient), raw);
+            default -> log.debug("no notification rule for event type {}", eventType);
         }
     }
 

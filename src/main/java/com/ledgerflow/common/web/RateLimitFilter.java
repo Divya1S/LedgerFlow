@@ -46,6 +46,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/v1/payments/")
                 || (path.startsWith("/api/v1/disputes/") && path.endsWith("/decision"))
                 || (path.startsWith("/api/v1/payment-requests/") && path.endsWith("/pay"))
+                || (path.startsWith("/api/v1/transfer-holds/") && path.endsWith("/cancel"))
                 || (path.startsWith("/api/v1/accounts/")
                     && (path.endsWith("/deposits") || path.endsWith("/withdrawals")));
         return !moneyEndpoint;

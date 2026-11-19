@@ -27,6 +27,8 @@ DOMAIN="${DEMO_DOMAIN:-demo.ledgerflow.io}"
 MAYA="maya@$DOMAIN"
 DANIEL="daniel@$DOMAIN"
 SHOPS="shops@$DOMAIN"
+SAM="sam@$DOMAIN"
+LENA="lena@$DOMAIN"
 
 field() { python3 -c "import json,sys;print(json.load(sys.stdin)['$1'])"; }
 
@@ -169,6 +171,15 @@ INSERT INTO fraud_decisions (id, payment_id, verdict, score, rule_hits, evaluate
 SELECT gen_random_uuid(), pay.id, 'APPROVED', 0, '[]', pay.created_at + interval '1 second'
 FROM payments pay JOIN plan p ON p.id = pay.transaction_id;
 
+-- These people have eleven weeks of history, so their profiles and
+-- accounts are that old too. (It also matters to the hold rule: an account
+-- opened minutes ago is treated as a warning sign.)
+UPDATE accounts SET created_at = now() - interval '78 days'
+WHERE id IN (:'everyday', :'savings', :'travel', :'studio', :'daniel', :'market', :'cafe',
+             :'transit', :'energy', :'books', :'cinema');
+UPDATE users SET created_at = now() - interval '78 days'
+WHERE id IN (SELECT user_id FROM accounts WHERE id IN (:'everyday', :'daniel', :'market'));
+
 -- Balances come from the entries just written, never from a separate sum.
 UPDATE account_balances b
 SET balance = b.balance + d.delta, version = b.version + 1
@@ -206,6 +217,18 @@ api POST /api/v1/payments "$MAYA_T" "{\"sourceAccountId\":\"$EVERYDAY\",\"destin
 api POST /api/v1/transfers "$DANIEL_T" "{\"sourceAccountId\":\"$DANIEL_W\",\"destinationAccountId\":\"$EVERYDAY\",\"amountMinorUnits\":4800,\"currency\":\"USD\",\"description\":\"Dinner on Friday\"}" > /dev/null
 api POST "/api/v1/accounts/$TRAVEL/freeze" "$MAYA_T" '{}' > /dev/null
 
+# Two transfers that go on hold, one each way, so the held-transfers screen
+# has something real on it.
+#   Maya buys a bike from Sam, whose account is brand new: held for a day.
+#   Lena, a new client, pays Maya for a poster: held for an hour.
+SAM_T=$(register "$SAM" "Sam Rivera")
+SAM_W=$(open_account "$SAM_T" USER_WALLET "Main")
+LENA_T=$(register "$LENA" "Lena Fischer")
+LENA_W=$(open_account "$LENA_T" USER_WALLET "Main")
+api POST "/api/v1/accounts/$LENA_W/deposits" "$LENA_T" '{"amountMinorUnits":90000,"currency":"USD"}' > /dev/null
+api POST /api/v1/transfers "$MAYA_T" "{\"sourceAccountId\":\"$EVERYDAY\",\"destinationAccountId\":\"$SAM_W\",\"amountMinorUnits\":42000,\"currency\":\"USD\",\"description\":\"Second-hand bike\"}" > /dev/null
+api POST /api/v1/transfers "$LENA_T" "{\"sourceAccountId\":\"$LENA_W\",\"destinationAccountId\":\"$EVERYDAY\",\"amountMinorUnits\":35000,\"currency\":\"USD\",\"description\":\"Poster design\"}" > /dev/null
+
 echo "==> Checking the books"
 "${PSQL[@]}" -A -t <<'SQL'
 SELECT 'ledger sum (must be 0): ' || coalesce(sum(amount), 0) FROM ledger_entries;
@@ -213,6 +236,9 @@ SELECT 'accounts whose balance disagrees with their entries (must be 0): ' || co
 FROM account_balances b
 LEFT JOIN (SELECT account_id, sum(amount) AS s FROM ledger_entries GROUP BY account_id) e ON e.account_id = b.account_id
 WHERE b.balance <> coalesce(e.s, 0);
+SELECT 'money on hold not matched by the hold account (must be 0): '
+    || (SELECT balance FROM account_balances WHERE account_id = '00000000-0000-7000-8000-000000000003')
+     - (SELECT coalesce(sum(amount), 0) FROM transfer_holds WHERE status = 'HELD');
 SQL
 
 cat <<DONE

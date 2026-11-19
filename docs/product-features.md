@@ -31,7 +31,38 @@ large to do properly here, are listed at the end with the reason.
 All paths are under `/api/v1`. Swagger UI at `/swagger-ui.html` lists every
 request and response, grouped by these names.
 
+## One feature that came from a complaint
+
+Everything in the table above came from what products ship. Held
+transfers came from what their customers complain about most: a payment
+sent to a scammer, or to the wrong person, that cannot be taken back. It
+is the top issue in US regulator data for payment apps (37% of complaints
+in 2024).
+
+A first payment of $200 or more to someone the sender has never settled
+money with is held for an hour (a day when there are warning signs about
+the recipient). The sender is told before sending, can cancel until it is
+delivered, and nobody has to approve the release. The evidence, the
+alternatives and the costs are in
+[ADR-010](decisions/ADR-010-held-transfers.md).
+
+| Endpoint | What it does |
+|---|---|
+| `GET /transfers/protection-check` | Will this transfer be held, for how long and why |
+| `POST /transfers` | Unchanged request. The reply says `HELD` and when it arrives |
+| `GET /transfer-holds` | Transfers you sent on hold, and money on its way to you |
+| `POST /transfer-holds/{id}/cancel` | Take the money back before it is delivered |
+
 ## The rules each feature keeps
+
+### Held transfers: money on hold is in an account, and leaves it once
+
+The transfer is three balanced postings: sender to suspense when sent,
+then suspense to recipient on release or suspense back to sender on
+cancel. The suspense balance always equals the total of open holds, which
+`TransferHoldIT` checks after every scenario. Cancel and release both
+lock the hold row, so only one of them can settle it; the test races four
+of each and finds exactly one settling transaction.
 
 ### Scheduled transfers: each date runs exactly once
 
@@ -216,6 +247,7 @@ returning the first result instead of moving money twice.
 | Money requests, concurrent pay | `PaymentRequestIT` |
 | Inbox, profile, password, activity | `InboxAndProfileIT` |
 | Partition maintenance | `PartitionMaintenanceIT` |
+| Held transfers: hold, release, cancel, race, signals | `TransferHoldIT` |
 
 The dashboard was also driven through 23 flows in a headless browser
 against the packaged jar (register, add money, send with name check,

@@ -138,6 +138,9 @@ system accounts and `0` for user wallets.
 | A money request is paid exactly when it points at the transfer that paid it | `CHECK ((status = 'PAID') = (transaction_id IS NOT NULL))` | "paid" must never be a claim without the money |
 | An active schedule always knows its next date | `CHECK (status <> 'ACTIVE' OR next_run_at IS NOT NULL)` | a schedule with no next date would silently never run |
 | A recipient is saved once per person | `UNIQUE (owner_user_id, account_id)` | same reason as the dispute index |
+| A held transfer is open exactly while nothing has settled it | `CHECK ((status = 'HELD') = (settle_transaction_id IS NULL))` | a hold must never say "released" without the entries that moved the money |
+| One cash, fees and suspense account per currency | partial `UNIQUE (type, currency) WHERE user_id IS NULL` | a second suspense account would split held money and make the lookup ambiguous |
+| Money on hold equals the suspense balance | every hold step is a balanced posting through the one movement path; checked by `TransferHoldIT` and `scripts/seed-demo.sh` | held money has to be somewhere an auditor can look |
 
 ## Key modeling decisions
 

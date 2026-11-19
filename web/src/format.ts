@@ -134,6 +134,46 @@ export function categoryLabel(code: string | null): string {
   return CATEGORY_LABELS[code] ?? titleCase(code);
 }
 
+const REASON_TEXT: Record<string, string> = {
+  FIRST_PAYMENT: 'You have not sent money to them before.',
+  RECIPIENT_ACCOUNT_NEW: 'Their account was opened in the last few days.',
+  RECIPIENT_PAID_BY_STRANGERS: 'Several people who never paid them before have sent them money today.',
+};
+
+/** A hold reason code in plain words. */
+export function reasonText(code: string): string {
+  return REASON_TEXT[code] ?? titleCase(code);
+}
+
+/** "4 hours", "24 hours", "30 minutes". */
+export function durationText(minutes: number): string {
+  if (minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  }
+  return `${minutes} minutes`;
+}
+
+/** "today at 6:10 PM", "tomorrow at 9:00 AM", or "Nov 21 at 9:00 AM". */
+export function arrivalText(iso: string): string {
+  const when = new Date(iso);
+  const label = dayLabel(iso);
+  const day = label === 'Today' ? 'today' : label === 'Yesterday' ? 'yesterday'
+    : sameDay(when, new Date(Date.now() + 86_400_000)) ? 'tomorrow'
+    : shortDateFormat.format(when);
+  return `${day} at ${timeFormat.format(when)}`;
+}
+
+/** What a transaction type is called on screen. */
+export function typeLabel(type: string): string {
+  switch (type) {
+    case 'HOLD': return 'Transfer';
+    case 'HOLD_RELEASE': return 'Transfer';
+    case 'HOLD_RETURN': return 'Transfer returned';
+    default: return titleCase(type);
+  }
+}
+
 export function accountTypeLabel(type: string): string {
   return type === 'MERCHANT' ? 'Merchant account' : 'Wallet';
 }

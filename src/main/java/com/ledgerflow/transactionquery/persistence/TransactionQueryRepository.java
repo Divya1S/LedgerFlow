@@ -37,7 +37,11 @@ public class TransactionQueryRepository {
     /** A transaction plus how each side should be named to the viewer. */
     public record TransactionDetail(
             TransactionView transaction, String sourceLabel, String destinationLabel,
-            boolean sourceOwn, boolean destinationOwn) {
+            boolean sourceOwn, boolean destinationOwn, HoldState hold) {
+    }
+
+    /** Where a held transfer stands: HELD, RELEASED, CANCELLED or RETURNED. */
+    public record HoldState(UUID holdId, String status, OffsetDateTime releaseAt) {
     }
 
     /** Optional narrowing of a user's history. Null fields do not filter. */
@@ -67,6 +71,17 @@ public class TransactionQueryRepository {
 
     private static final String OWN_ACCOUNTS = "(SELECT id FROM accounts WHERE user_id = :userId)";
 
+    // A held transfer is recorded as two transactions that both name the
+    // sender and the recipient: HOLD (the money leaves the sender) and
+    // HOLD_RELEASE (it reaches the recipient). Each person's history shows
+    // only the one that touched their own balance, so nobody sees a
+    // transfer twice or sees money "arrive" that is still on hold.
+    private static final String AS_SENDER = " AND t.type <> 'HOLD_RELEASE'";
+    private static final String AS_RECIPIENT = " AND t.type <> 'HOLD'";
+
+    // To a person, a transfer that waited on hold is still a transfer.
+    private static final String TRANSFER_TYPES = "('TRANSFER', 'HOLD', 'HOLD_RELEASE', 'HOLD_RETURN')";
+
     /**
      * Transactions touching the user's accounts, newest first, optionally
      * filtered. UNION ALL of two index-friendly branches (source side,
@@ -87,7 +102,9 @@ public class TransactionQueryRepository {
             params.put("cts", cursorTime);
             params.put("cid", cursorId);
         }
-        if (filter.type() != null) {
+        if ("TRANSFER".equals(filter.type())) {
+            shared.append(" AND t.type IN " + TRANSFER_TYPES);
+        } else if (filter.type() != null) {
             shared.append(" AND t.type = :type");
             params.put("type", filter.type());
         }
@@ -129,13 +146,13 @@ public class TransactionQueryRepository {
             String leavesUser = "OUT".equals(filter.direction()) && !oneAccount
                     ? " AND t.destination_account_id NOT IN " + OWN_ACCOUNTS : "";
             branches.add("SELECT " + TXN_COLUMNS + " FROM transactions t WHERE "
-                    + sourceMatch + shared + leavesUser);
+                    + sourceMatch + AS_SENDER + shared + leavesUser);
         }
         if (!"OUT".equals(filter.direction())) {
             String entersUser = "IN".equals(filter.direction()) && !oneAccount
                     ? " AND t.source_account_id NOT IN " + OWN_ACCOUNTS : "";
             branches.add("SELECT " + TXN_COLUMNS + " FROM transactions t WHERE "
-                    + destinationMatch + shared + entersUser);
+                    + destinationMatch + AS_RECIPIENT + shared + entersUser);
         }
 
         String sql = """
@@ -143,7 +160,8 @@ public class TransactionQueryRepository {
                        %s AS source_label,
                        %s AS destination_label,
                        COALESCE(sa.user_id = :userId, false) AS source_own,
-                       COALESCE(da.user_id = :userId, false) AS destination_own
+                       COALESCE(da.user_id = :userId, false) AS destination_own,
+                       h.id AS hold_id, h.status AS hold_status, h.release_at AS hold_release_at
                 FROM (
                     SELECT DISTINCT ON (u.created_at, u.id) u.*
                     FROM (%s) u
@@ -154,6 +172,7 @@ public class TransactionQueryRepository {
                 LEFT JOIN users su ON su.id = sa.user_id
                 LEFT JOIN accounts da ON da.id = p.destination_account_id
                 LEFT JOIN users du ON du.id = da.user_id
+                LEFT JOIN transfer_holds h ON p.type = 'HOLD' AND h.hold_transaction_id = p.id
                 ORDER BY p.created_at DESC, p.id DESC
                 """.formatted(
                 PartyLabel.sql("sa", "su", "userId"),
@@ -167,7 +186,11 @@ public class TransactionQueryRepository {
                         rs.getString("source_label"),
                         rs.getString("destination_label"),
                         rs.getBoolean("source_own"),
-                        rs.getBoolean("destination_own")))
+                        rs.getBoolean("destination_own"),
+                        rs.getObject("hold_id", UUID.class) == null ? null : new HoldState(
+                                rs.getObject("hold_id", UUID.class),
+                                rs.getString("hold_status"),
+                                rs.getObject("hold_release_at", OffsetDateTime.class))))
                 .list();
     }
 
@@ -177,14 +200,14 @@ public class TransactionQueryRepository {
                         SELECT DISTINCT ON (u.created_at, u.id) u.*
                         FROM (
                             SELECT %s FROM transactions t
-                            WHERE t.source_account_id = :accountId%s
+                            WHERE t.source_account_id = :accountId%s%s
                             UNION ALL
                             SELECT %s FROM transactions t
-                            WHERE t.destination_account_id = :accountId%s
+                            WHERE t.destination_account_id = :accountId%s%s
                         ) u
                         ORDER BY u.created_at DESC, u.id DESC
                         LIMIT :limit
-                        """.formatted(TXN_COLUMNS, keyset, TXN_COLUMNS, keyset))
+                        """.formatted(TXN_COLUMNS, AS_SENDER, keyset, TXN_COLUMNS, AS_RECIPIENT, keyset))
                 .param("accountId", accountId)
                 .param("limit", limit)
                 .params(cursorParams(cursorTime, cursorId))
@@ -299,8 +322,10 @@ public class TransactionQueryRepository {
                             SELECT 1
                             FROM transactions t
                             WHERE t.id = :transactionId
-                              AND (t.source_account_id IN (SELECT id FROM accounts WHERE user_id = :userId)
-                                OR t.destination_account_id IN (SELECT id FROM accounts WHERE user_id = :userId))
+                              AND ((t.source_account_id IN (SELECT id FROM accounts WHERE user_id = :userId)
+                                    AND t.type <> 'HOLD_RELEASE')
+                                OR (t.destination_account_id IN (SELECT id FROM accounts WHERE user_id = :userId)
+                                    AND t.type <> 'HOLD'))
                         )
                         """)
                 .param("transactionId", transactionId)

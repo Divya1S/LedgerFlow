@@ -69,6 +69,46 @@ export interface TransactionItem {
   counterparty: string | null;
   sourceLabel: string | null;
   destinationLabel: string | null;
+  /** Set on a transfer that was put on hold. */
+  hold: { holdId: string; status: HoldStatus; releaseAt: string } | null;
+}
+
+export type HoldStatus = 'HELD' | 'RELEASED' | 'CANCELLED' | 'RETURNED';
+
+/** Why a transfer waits on hold, as codes. reasonText() turns them into words. */
+export type HoldReason = 'FIRST_PAYMENT' | 'RECIPIENT_ACCOUNT_NEW' | 'RECIPIENT_PAID_BY_STRANGERS';
+
+export interface HeldTransfer {
+  id: string;
+  status: HoldStatus;
+  direction: 'OUTGOING' | 'INCOMING';
+  amountMinorUnits: number;
+  currency: string;
+  description: string | null;
+  counterparty: string;
+  accountName: string;
+  riskLevel: 'ELEVATED' | 'HIGH' | null;
+  reasons: HoldReason[];
+  releaseAt: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  transactionId: string | null;
+  canCancel: boolean;
+}
+
+export interface HeldTransfers {
+  outgoing: HeldTransfer[];
+  incoming: HeldTransfer[];
+  heldOutMinorUnits: number;
+}
+
+export interface ProtectionCheck {
+  held: boolean;
+  riskLevel: 'ELEVATED' | 'HIGH' | null;
+  reasons: HoldReason[];
+  holdMinutes: number;
+  releaseAt: string | null;
+  thresholdMinorUnits: number;
 }
 
 export interface LedgerEntry {
@@ -132,6 +172,7 @@ export interface Overview {
   from: string;
   to: string;
   totalBalanceMinorUnits: number;
+  balanceChangeMinorUnits: number;
   accounts: { id: string; name: string; type: string; status: string; category: string | null; balanceMinorUnits: number }[];
   current: Totals;
   previous: Totals;
@@ -142,10 +183,12 @@ export interface Overview {
 export interface MovementResult {
   transactionId: string;
   type: string;
+  /** COMPLETED when the money has arrived, HELD when it is waiting on hold. */
   status: string;
   amountMinorUnits: number;
   currency: string;
   createdAt: string;
+  hold: { holdId: string; riskLevel: 'ELEVATED' | 'HIGH'; reasons: HoldReason[]; releaseAt: string } | null;
 }
 
 export interface PaymentResult {
@@ -233,6 +276,8 @@ export interface MoneyRequest {
   expiresAt: string;
   paidAt: string | null;
   createdAt: string;
+  /** Present in the reply to the payer when their payment went on hold. */
+  heldUntil?: string | null;
 }
 
 export interface NotificationItem {
@@ -303,6 +348,8 @@ const FRIENDLY: Record<string, string> = {
   REQUEST_CANCELLED: 'This request was cancelled and can no longer be paid.',
   REQUEST_EXPIRED: 'This request has expired. Ask the sender for a new one.',
   DISPUTE_ALREADY_OPEN: 'This payment already has an open dispute.',
+  HOLD_NOT_FOUND: 'We could not find that transfer.',
+  ACCOUNT_HAS_HELD_TRANSFERS: 'A transfer on hold still involves this account. Wait for it to arrive, or cancel it, then close the account.',
   START_IN_PAST: 'Choose today or a later date.',
   NETWORK: 'We could not reach LedgerFlow. Check your connection and try again.',
 };
@@ -529,6 +576,22 @@ export class LedgerFlowApi {
     return this.request<MovementResult>('POST', '/api/v1/transfers',
       { sourceAccountId, destinationAccountId, amountMinorUnits, currency: 'USD',
         description: description || undefined }, key);
+  }
+
+  // --- held transfers --------------------------------------------------
+
+  /** Asks, before sending, whether this transfer would wait on hold and why. */
+  protectionCheck(destinationAccountId: string, amountMinorUnits: number) {
+    return this.get<ProtectionCheck>('/api/v1/transfers/protection-check',
+      { destinationAccountId, amountMinorUnits });
+  }
+
+  heldTransfers() {
+    return this.get<HeldTransfers>('/api/v1/transfer-holds');
+  }
+
+  cancelHeldTransfer(id: string, key: string) {
+    return this.request<HeldTransfer>('POST', `/api/v1/transfer-holds/${id}/cancel`, {}, key);
   }
 
   // --- scheduled transfers ---------------------------------------------

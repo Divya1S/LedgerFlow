@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Account, api, errorMessage, MoneyRequest, newIdempotencyKey } from '../api';
 import { AccountSelect } from '../components';
-import { formatDate, formatMoney, parseAmount } from '../format';
+import { arrivalText, formatDate, formatMoney, parseAmount } from '../format';
 import { navigate, useLoad } from '../hooks';
 import { Icon } from '../icons';
 import {
@@ -169,6 +169,7 @@ export function PayRequestView({ requestId }: { requestId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
+  const [heldUntil, setHeldUntil] = useState<string | null>(null);
 
   const payable = (accounts.data ?? []).filter((a) => a.status === 'ACTIVE');
   const source = accountId || payable[0]?.id || '';
@@ -179,7 +180,8 @@ export function PayRequestView({ requestId }: { requestId: string }) {
     setBusy(true);
     setError(null);
     try {
-      await api.payMoneyRequest(requestId, source, key);
+      const { data } = await api.payMoneyRequest(requestId, source, key);
+      setHeldUntil(data.heldUntil ?? null);
       setPaid(true);
       request.reload();
     } catch (e) {
@@ -215,10 +217,18 @@ export function PayRequestView({ requestId }: { requestId: string }) {
 
             {paid || r.status === 'PAID' ? (
               <>
-                <Notice tone="success">
-                  <strong>Paid.</strong> {paid ? `${formatMoney(r.amountMinorUnits, r.currency)} was sent to ${r.requesterName}.`
-                    : 'This request has been paid.'}
-                </Notice>
+                {paid && heldUntil ? (
+                  <Notice tone="warn">
+                    <strong>Paid, and on hold.</strong> This is your first payment to {r.requesterName}, so it
+                    arrives {arrivalText(heldUntil)}. You can cancel it before then
+                    under <a href="#/held">Held transfers</a>.
+                  </Notice>
+                ) : (
+                  <Notice tone="success">
+                    <strong>Paid.</strong> {paid ? `${formatMoney(r.amountMinorUnits, r.currency)} was sent to ${r.requesterName}.`
+                      : 'This request has been paid.'}
+                  </Notice>
+                )}
                 <div className="row"><Button onClick={() => navigate('/transactions')}>View transactions</Button></div>
               </>
             ) : r.status !== 'PENDING' ? (

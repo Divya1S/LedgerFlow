@@ -167,6 +167,12 @@ public class AccountService {
             throw ApiException.conflict("ACCOUNT_NOT_EMPTY",
                     "Account balance must be zero before closing");
         }
+        // Money on hold still has to come back to, or arrive in, this
+        // account. Closing it now would leave that money with nowhere to go.
+        if (accounts.hasOpenHolds(accountId)) {
+            throw ApiException.conflict("ACCOUNT_HAS_HELD_TRANSFERS",
+                    "A transfer on hold still involves this account");
+        }
         accounts.updateStatus(accountId, "CLOSED");
         audit.record(userId, "ACCOUNT_CLOSED", "account", accountId.toString(),
                 "{\"status\":\"" + account.status() + "\"}", "{\"status\":\"CLOSED\"}", "account", null);

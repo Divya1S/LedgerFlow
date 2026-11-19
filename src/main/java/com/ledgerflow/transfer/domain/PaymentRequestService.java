@@ -50,15 +50,20 @@ public class PaymentRequestService {
     public record RequestView(UUID id, String requesterName, long amountMinorUnits, String currency,
                               String note, String status, boolean mine, String payerName,
                               UUID transactionId, OffsetDateTime expiresAt, OffsetDateTime paidAt,
-                              OffsetDateTime createdAt) {
+                              OffsetDateTime createdAt, OffsetDateTime heldUntil) {
         static RequestView from(RequestRow r, UUID viewerUserId) {
+            return from(r, viewerUserId, null);
+        }
+
+        /** heldUntil is set in the reply to the payer when their payment went on hold. */
+        static RequestView from(RequestRow r, UUID viewerUserId, OffsetDateTime heldUntil) {
             boolean mine = viewerUserId.equals(r.requesterUserId());
             boolean involved = mine || viewerUserId.equals(r.payerUserId());
             return new RequestView(r.id(), r.requesterName(), r.amount(), r.currency(), r.note(),
                     r.effectiveStatus(), mine,
                     involved ? r.payerName() : null,
                     involved ? r.transactionId() : null,
-                    r.expiresAt(), r.paidAt(), r.createdAt());
+                    r.expiresAt(), r.paidAt(), r.createdAt(), heldUntil);
         }
     }
 
@@ -134,7 +139,11 @@ public class PaymentRequestService {
         requests.markPaid(requestId, payerUserId, movement.transactionId(), movement.createdAt());
         audit.record(payerUserId, "MONEY_REQUEST_PAID", "payment_request", requestId.toString(),
                 "{\"status\":\"PENDING\"}", "{\"status\":\"PAID\"}", "transfer", null);
-        return RequestView.from(requests.findById(requestId).orElseThrow(), payerUserId);
+        // Paying a stranger's request is exactly how "pay this link" scams
+        // work, so it gets the same hold as any first payment. If the payer
+        // cancels the hold, the request goes back to unpaid.
+        return RequestView.from(requests.findById(requestId).orElseThrow(), payerUserId,
+                movement.hold() == null ? null : movement.hold().releaseAt());
     }
 
     private static ApiException notFound() {

@@ -59,8 +59,14 @@ public class InsightsController {
     public record Spending(String category, long amountMinorUnits, long transactions) {
     }
 
+    /**
+     * balanceChangeMinorUnits is how much the total balance really moved
+     * over the period. It usually equals current.net; it differs only when
+     * a held transfer was sent in one period and cancelled in another.
+     */
     public record Overview(String currency, int days, LocalDate from, LocalDate to,
-                           long totalBalanceMinorUnits, List<AccountLine> accounts,
+                           long totalBalanceMinorUnits, long balanceChangeMinorUnits,
+                           List<AccountLine> accounts,
                            Totals current, Totals previous,
                            List<Day> daily, List<Spending> spending) {
     }
@@ -88,7 +94,7 @@ public class InsightsController {
         OffsetDateTime end = today.plusDays(1).atStartOfDay(zoneId).toOffsetDateTime();
 
         if (summaries.isEmpty()) {
-            return new Overview("USD", days, from, today, 0, accounts,
+            return new Overview("USD", days, from, today, 0, 0, accounts,
                     new Totals(0, 0, 0), new Totals(0, 0, 0), emptyDays(from, today, 0), List.of());
         }
         UUID[] own = summaries.stream().map(s -> s.account().id()).toArray(UUID[]::new);
@@ -117,10 +123,13 @@ public class InsightsController {
             long in = flow == null ? 0 : flow.moneyIn();
             long out = flow == null ? 0 : flow.moneyOut();
             daily.add(new Day(day, in, out, closing));
-            closing -= in - out;
+            // Walk the balance by what actually moved, not by in minus out:
+            // a cancelled hold moved the balance without being either.
+            closing -= flow == null ? 0 : flow.net();
             currentIn += in;
             currentOut += out;
         }
+        long balanceChange = totalBalance - closing;
         List<Day> oldestFirst = daily.reversed();
 
         List<Spending> spending = insights.spending(own, start, end).stream()
@@ -128,7 +137,7 @@ public class InsightsController {
                 .toList();
 
         return new Overview(summaries.getFirst().account().currency(), days, from, today,
-                totalBalance, accounts,
+                totalBalance, balanceChange, accounts,
                 new Totals(currentIn, currentOut, currentIn - currentOut),
                 new Totals(previousIn, previousOut, previousIn - previousOut),
                 oldestFirst, spending);

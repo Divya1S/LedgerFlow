@@ -178,7 +178,9 @@ that is documented, not hidden.
 
 ## Engineering decisions
 
-Nine ADRs in [docs/decisions/](decisions/): source of truth, outbox,
+Ten ADRs in [docs/decisions/](decisions/). The newest,
+[ADR-010](decisions/ADR-010-held-transfers.md), starts from customer
+complaint data rather than from a technical constraint. The first nine: source of truth, outbox,
 Kafka, Redis boundaries, isolation level, concurrency control, pagination,
 partitioning, modular monolith. Scaling story: [docs/scalability.md](scalability.md).
 
